@@ -198,23 +198,26 @@ async def get_message(
         client.select_folder(folder)
 
         msg_id = int(message_id)
-        response = client.fetch([msg_id], ['FLAGS', 'RFC822'])
+
+        # Use BODY.PEEK[] instead of RFC822 - more reliable with IMAPClient
+        response = client.fetch([msg_id], [b'FLAGS', b'BODY.PEEK[]'])
 
         if msg_id not in response:
             raise ValueError(f"Message {message_id} not found")
 
         data = response[msg_id]
 
-        # Try both RFC822 key formats (bytes and string)
+        # Try multiple possible keys for the message body
         raw_email = None
-        if b'RFC822' in data:
-            raw_email = data[b'RFC822']
-        elif 'RFC822' in data:
-            raw_email = data['RFC822']
-        else:
+        for key in [b'BODY[]', 'BODY[]', b'RFC822', 'RFC822', b'BODY.PEEK[]']:
+            if key in data:
+                raw_email = data[key]
+                break
+
+        if raw_email is None:
             # Log available keys for debugging
             available_keys = list(data.keys())
-            raise KeyError(f"RFC822 not found in response. Available keys: {available_keys}")
+            raise KeyError(f"Message body not found. Available keys: {available_keys}")
 
         msg = email.message_from_bytes(raw_email)
 
