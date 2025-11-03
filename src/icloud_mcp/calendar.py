@@ -339,9 +339,11 @@ async def update_event(
             att.params['PARTSTAT'] = ['NEEDS-ACTION']
             att.params['RSVP'] = ['TRUE']
 
-    # Save changes
+    # Save changes - use PUT request directly to avoid parent dependency
     try:
-        event.save()
+        # Serialize the updated vCalendar data and send PUT request
+        updated_ical = event.vobject_instance.serialize()
+        event_client.put(event_id, updated_ical, {"Content-Type": "text/calendar; charset=utf-8"})
     except Exception as e:
         raise Exception(f"Error saving event: {str(e)}")
 
