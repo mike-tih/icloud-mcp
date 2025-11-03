@@ -289,8 +289,8 @@ async def update_event(
     email, password = require_auth(context)
     client = _get_caldav_client(email, password)
 
-    # Load existing event
-    event = caldav.Event(client=client, url=event_id)
+    # Load existing event using CalendarObjectResource (handles full URLs correctly)
+    event = caldav.CalendarObjectResource(client=client, url=event_id)
     event.load()
 
     vevent = event.vobject_instance.vevent
@@ -366,7 +366,8 @@ async def delete_event(context: Context, event_id: str) -> Dict[str, str]:
     email, password = require_auth(context)
     client = _get_caldav_client(email, password)
 
-    event = caldav.Event(client=client, url=event_id)
+    # Use CalendarObjectResource to handle full URLs correctly
+    event = caldav.CalendarObjectResource(client=client, url=event_id)
     event.delete()
 
     return {"status": "success", "message": f"Event {event_id} deleted"}
