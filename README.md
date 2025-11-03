@@ -141,6 +141,117 @@ docker-compose up
 
 The server will be available at `http://localhost:8000`.
 
+## Integration with Claude Desktop
+
+### Method 1: Local Execution with stdio (Recommended)
+
+This method allows Claude Desktop to directly launch the MCP server as a subprocess.
+
+**Step 1:** Install dependencies locally:
+```bash
+pip install -r requirements.txt
+```
+
+**Step 2:** Create a `.env` file with your credentials:
+```bash
+cp .env.example .env
+# Edit .env and add your iCloud credentials
+```
+
+**Step 3:** Find your Claude Desktop configuration file:
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+**Step 4:** Add this configuration (replace the path):
+
+```json
+{
+  "mcpServers": {
+    "icloud": {
+      "command": "python",
+      "args": ["/absolute/path/to/icloud-mcp/run.py"]
+    }
+  }
+}
+```
+
+Replace `/absolute/path/to/icloud-mcp/` with the actual full path to your project directory.
+
+**Example on macOS:**
+```json
+{
+  "mcpServers": {
+    "icloud": {
+      "command": "python",
+      "args": ["/Users/username/Projects/icloud-mcp/run.py"]
+    }
+  }
+}
+```
+
+**Step 5:** Restart Claude Desktop completely (Quit and reopen)
+
+### Method 2: Connect to Docker Server (HTTP Transport)
+
+If you prefer running the server in Docker separately:
+
+**Step 1:** Configure `.env` file and start Docker:
+```bash
+cp .env.example .env
+# Edit .env with your credentials
+docker-compose up -d
+```
+
+**Step 2:** Add this to Claude Desktop configuration:
+
+```json
+{
+  "mcpServers": {
+    "icloud": {
+      "transport": {
+        "type": "sse",
+        "url": "http://localhost:8000/sse"
+      }
+    }
+  }
+}
+```
+
+Note: Credentials are read from the `.env` file in Docker, so no need to include them in the config.
+
+**Step 3:** Restart Claude Desktop
+
+### Verification
+
+After restarting Claude Desktop:
+
+1. Open Claude Desktop application
+2. Look for the 🔨 (tools/hammer) icon in the bottom-right corner
+3. You should see "icloud" server listed with green status
+4. Try commands like:
+   - "List my calendars"
+   - "Show my contacts"
+   - "Get my unread emails"
+
+### Troubleshooting
+
+**Server doesn't appear:**
+- Check JSON syntax in config file (use a JSON validator)
+- View logs: Help → Show Logs in Claude Desktop
+- Verify the path to `run.py` is absolute (not relative)
+
+**401 Authentication errors:**
+- Ensure you're using an **App-Specific Password**, not your regular Apple password
+- Generate one at: https://appleid.apple.com/account/manage
+- Check `.env` file has correct credentials
+
+**Tools fail with 500 errors:**
+- Check server logs for details
+- Verify iCloud credentials are valid
+- Ensure network connectivity to iCloud servers
+
 ### Example: Using with MCP Client
 
 ```python

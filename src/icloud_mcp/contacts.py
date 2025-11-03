@@ -32,10 +32,24 @@ async def list_contacts(
     """
     email, password = require_auth(context)
     client = _get_carddav_client(email, password)
-    principal = client.principal()
 
-    # Get address books
-    address_books = principal.calendars()  # CardDAV uses same structure
+    try:
+        principal = client.principal()
+    except Exception as e:
+        raise ValueError(f"Failed to connect to CardDAV server: {str(e)}")
+
+    # Get address books (try multiple methods for compatibility)
+    address_books = []
+    try:
+        # Try standard method first
+        address_books = principal.calendars()
+    except:
+        try:
+            # Alternative: try to get all collections
+            address_books = list(principal.addressbooks())
+        except:
+            pass
+
     if not address_books:
         return []
 
@@ -43,11 +57,15 @@ async def list_contacts(
     address_book = address_books[0]
 
     # Fetch all vCards
+    vcards = []
     try:
-        vcards = address_book.objects()
-    except:
-        # Alternative method if objects() doesn't work
-        vcards = []
+        vcards = list(address_book.objects())
+    except Exception as e:
+        # If objects() fails, try alternative methods
+        try:
+            vcards = list(address_book.search())
+        except:
+            pass
 
     result = []
     count = 0
@@ -57,38 +75,57 @@ async def list_contacts(
             break
 
         try:
+            # Safely get vCard data
             vcard_data = vcard_obj.data
+            if not vcard_data or len(vcard_data) == 0:
+                continue
+
             vcard = vobject.readOne(vcard_data)
 
             contact = {
-                "id": str(vcard_obj.url),
-                "name": str(vcard.fn.value) if hasattr(vcard, 'fn') else "",
+                "id": str(vcard_obj.url) if hasattr(vcard_obj, 'url') else "",
+                "name": "",
                 "phones": [],
                 "emails": [],
                 "addresses": [],
-                "url": str(vcard_obj.url)
+                "url": str(vcard_obj.url) if hasattr(vcard_obj, 'url') else ""
             }
+
+            # Safely extract name
+            if hasattr(vcard, 'fn') and vcard.fn and hasattr(vcard.fn, 'value'):
+                contact["name"] = str(vcard.fn.value)
 
             # Extract phone numbers
             if hasattr(vcard, 'tel_list'):
                 for tel in vcard.tel_list:
-                    contact["phones"].append(str(tel.value))
+                    if hasattr(tel, 'value') and tel.value:
+                        contact["phones"].append(str(tel.value))
 
             # Extract emails
             if hasattr(vcard, 'email_list'):
                 for em in vcard.email_list:
-                    contact["emails"].append(str(em.value))
+                    if hasattr(em, 'value') and em.value:
+                        contact["emails"].append(str(em.value))
 
-            # Extract addresses
+            # Extract addresses (safe conversion)
             if hasattr(vcard, 'adr_list'):
                 for adr in vcard.adr_list:
-                    contact["addresses"].append(str(adr.value))
+                    if hasattr(adr, 'value'):
+                        try:
+                            # Try to convert to string safely
+                            addr_str = str(adr.value) if adr.value else ""
+                            if addr_str:
+                                contact["addresses"].append(addr_str)
+                        except:
+                            continue
 
-            result.append(contact)
-            count += 1
+            # Only add contact if it has a name or at least one other field
+            if contact["name"] or contact["phones"] or contact["emails"]:
+                result.append(contact)
+                count += 1
 
         except Exception as e:
-            # Skip malformed vCards
+            # Skip malformed vCards, log error if needed
             continue
 
     return result

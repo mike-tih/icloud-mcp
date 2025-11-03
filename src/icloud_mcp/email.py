@@ -3,6 +3,9 @@
 import imaplib
 import smtplib
 import email
+import logging
+import sys
+import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import decode_header
@@ -13,12 +16,34 @@ from imapclient import IMAPClient
 from .auth import require_auth
 from .config import config
 
+# Configure minimal logging (only errors)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
+
+# Log errors to stderr
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+stderr_handler = logging.StreamHandler(sys.stderr)
+stderr_handler.setLevel(logging.ERROR)
+stderr_handler.setFormatter(formatter)
+logger.addHandler(stderr_handler)
+
 
 def _get_imap_client(username: str, password: str) -> IMAPClient:
     """Create IMAP client (stateless)."""
-    client = IMAPClient(config.IMAP_SERVER, port=config.IMAP_PORT, ssl=True)
+    client = IMAPClient(config.IMAP_SERVER, port=config.IMAP_PORT, ssl=True, use_uid=True)
     client.login(username, password)
     return client
+
+
+def _close_imap_client(client: IMAPClient) -> None:
+    """Safely close IMAP client connection."""
+    try:
+        # Don't call logout() - it causes "file property has no setter" error in Python 3.14+
+        # Just close the underlying socket
+        if hasattr(client, '_imap') and hasattr(client._imap, 'sock'):
+            client._imap.sock.close()
+    except:
+        pass  # Silently ignore errors on close
 
 
 def _get_smtp_client(username: str, password: str) -> smtplib.SMTP:
@@ -56,9 +81,11 @@ async def list_folders(context: Context) -> List[Dict[str, Any]]:
     Returns:
         List of folders with name and flags
     """
-    username, password = require_auth(context)
+    try:
+        username, password = require_auth(context)
 
-    with _get_imap_client(username, password) as client:
+        client = _get_imap_client(username, password)
+
         folders = client.list_folders()
 
         result = []
@@ -70,6 +97,13 @@ async def list_folders(context: Context) -> List[Dict[str, Any]]:
             })
 
         return result
+    except Exception as e:
+        raise
+    finally:
+        try:
+            _close_imap_client(client)
+        except:
+            pass
 
 
 async def list_messages(
@@ -87,11 +121,12 @@ async def list_messages(
         unread_only: Only return unread messages
 
     Returns:
-        List of messages with basic info
     """
-    username, password = require_auth(context)
+    try:
+        username, password = require_auth(context)
 
-    with _get_imap_client(username, password) as client:
+        client = _get_imap_client(username, password)
+
         client.select_folder(folder)
 
         # Search for messages
@@ -99,6 +134,7 @@ async def list_messages(
             messages = client.search(['UNSEEN'])
         else:
             messages = client.search(['ALL'])
+
 
         # Get most recent messages
         message_ids = list(messages)[-limit:] if len(messages) > limit else list(messages)
@@ -130,6 +166,13 @@ async def list_messages(
 
         return result
 
+    except Exception as e:
+        raise
+    finally:
+        try:
+            _close_imap_client(client)
+        except:
+            pass
 
 async def get_message(
     context: Context,
@@ -148,19 +191,34 @@ async def get_message(
     Returns:
         Complete message details
     """
-    username, password = require_auth(context)
+    try:
+        username, password = require_auth(context)
+        client = _get_imap_client(username, password)
 
-    with _get_imap_client(username, password) as client:
         client.select_folder(folder)
 
         msg_id = int(message_id)
-        response = client.fetch([msg_id], ['FLAGS', 'RFC822'])
+
+        # Use BODY.PEEK[] instead of RFC822 - more reliable with IMAPClient
+        response = client.fetch([msg_id], [b'FLAGS', b'BODY.PEEK[]'])
 
         if msg_id not in response:
             raise ValueError(f"Message {message_id} not found")
 
         data = response[msg_id]
-        raw_email = data[b'RFC822']
+
+        # Try multiple possible keys for the message body
+        raw_email = None
+        for key in [b'BODY[]', 'BODY[]', b'RFC822', 'RFC822', b'BODY.PEEK[]']:
+            if key in data:
+                raw_email = data[key]
+                break
+
+        if raw_email is None:
+            # Log available keys for debugging
+            available_keys = list(data.keys())
+            raise KeyError(f"Message body not found. Available keys: {available_keys}")
+
         msg = email.message_from_bytes(raw_email)
 
         result = {
@@ -170,7 +228,7 @@ async def get_message(
             "to": _decode_mime_header(msg.get('To', '')),
             "cc": _decode_mime_header(msg.get('Cc', '')),
             "date": msg.get('Date', ''),
-            "flags": [flag.decode() if isinstance(flag, bytes) else flag for flag in data[b'FLAGS']],
+            "flags": [flag.decode() if isinstance(flag, bytes) else flag for flag in data.get(b'FLAGS', data.get('FLAGS', []))],
             "folder": folder
         }
 
@@ -203,6 +261,115 @@ async def get_message(
 
         return result
 
+    except Exception as e:
+        raise
+    finally:
+        try:
+            _close_imap_client(client)
+        except:
+            pass
+
+
+async def get_messages(
+    context: Context,
+    message_ids: List[str],
+    folder: str = "INBOX",
+    include_body: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Get multiple messages at once.
+
+    Args:
+        message_ids: List of message IDs to fetch
+        folder: Folder name (default: INBOX)
+        include_body: Include message body content
+
+    Returns:
+        List of message details
+    """
+    try:
+        username, password = require_auth(context)
+        client = _get_imap_client(username, password)
+
+        client.select_folder(folder)
+
+        # Convert string IDs to integers
+        msg_ids = [int(mid) for mid in message_ids]
+
+        # Fetch all messages at once
+        response = client.fetch(msg_ids, [b'FLAGS', b'BODY.PEEK[]'])
+
+        results = []
+
+        for msg_id in msg_ids:
+            if msg_id not in response:
+                # Skip missing messages
+                continue
+
+            data = response[msg_id]
+
+            # Try multiple possible keys for the message body
+            raw_email = None
+            for key in [b'BODY[]', 'BODY[]', b'RFC822', 'RFC822', b'BODY.PEEK[]']:
+                if key in data:
+                    raw_email = data[key]
+                    break
+
+            if raw_email is None:
+                # Skip messages without body
+                continue
+
+            msg = email.message_from_bytes(raw_email)
+
+            result = {
+                "id": str(msg_id),
+                "subject": _decode_mime_header(msg.get('Subject', '')),
+                "from": _decode_mime_header(msg.get('From', '')),
+                "to": _decode_mime_header(msg.get('To', '')),
+                "cc": _decode_mime_header(msg.get('Cc', '')),
+                "date": msg.get('Date', ''),
+                "flags": [flag.decode() if isinstance(flag, bytes) else flag for flag in data.get(b'FLAGS', data.get('FLAGS', []))],
+                "folder": folder
+            }
+
+            if include_body:
+                # Extract body
+                body_text = ""
+                body_html = ""
+
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        content_type = part.get_content_type()
+                        if content_type == "text/plain":
+                            try:
+                                body_text = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                            except:
+                                pass
+                        elif content_type == "text/html":
+                            try:
+                                body_html = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                            except:
+                                pass
+                else:
+                    try:
+                        body_text = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
+                    except:
+                        pass
+
+                result["body_text"] = body_text
+                result["body_html"] = body_html
+
+            results.append(result)
+
+        return results
+
+    except Exception as e:
+        raise
+    finally:
+        try:
+            _close_imap_client(client)
+        except:
+            pass
 
 async def search_messages(
     context: Context,
@@ -223,7 +390,9 @@ async def search_messages(
     """
     username, password = require_auth(context)
 
-    with _get_imap_client(username, password) as client:
+    client = _get_imap_client(username, password)
+    
+    try:
         client.select_folder(folder)
 
         # Search by subject or from
@@ -261,6 +430,12 @@ async def search_messages(
 
         return result
 
+
+    finally:
+        try:
+            _close_imap_client(client)
+        except:
+            pass
 
 async def send_message(
     context: Context,
@@ -337,7 +512,9 @@ async def move_message(
     """
     username, password = require_auth(context)
 
-    with _get_imap_client(username, password) as client:
+    client = _get_imap_client(username, password)
+    
+    try:
         client.select_folder(from_folder)
         msg_id = int(message_id)
 
@@ -348,11 +525,15 @@ async def move_message(
         client.delete_messages([msg_id])
         client.expunge()
 
-    return {
-        "status": "success",
-        "message": f"Message {message_id} moved from {from_folder} to {to_folder}"
-    }
-
+        return {
+            "status": "success",
+            "message": f"Message {message_id} moved from {from_folder} to {to_folder}"
+        }
+    finally:
+        try:
+            _close_imap_client(client)
+        except:
+            pass
 
 async def delete_message(
     context: Context,
@@ -373,7 +554,9 @@ async def delete_message(
     """
     username, password = require_auth(context)
 
-    with _get_imap_client(username, password) as client:
+    client = _get_imap_client(username, password)
+    
+    try:
         client.select_folder(folder)
         msg_id = int(message_id)
 
@@ -395,11 +578,15 @@ async def delete_message(
                 client.expunge()
                 message = f"Message {message_id} deleted"
 
-    return {
-        "status": "success",
-        "message": message
-    }
-
+        return {
+            "status": "success",
+            "message": message
+        }
+    finally:
+        try:
+            _close_imap_client(client)
+        except:
+            pass
 
 async def mark_as_read(
     context: Context,
@@ -418,16 +605,22 @@ async def mark_as_read(
     """
     username, password = require_auth(context)
 
-    with _get_imap_client(username, password) as client:
+    client = _get_imap_client(username, password)
+    
+    try:
         client.select_folder(folder)
         msg_id = int(message_id)
         client.add_flags([msg_id], ['\\Seen'])
 
-    return {
-        "status": "success",
-        "message": f"Message {message_id} marked as read"
-    }
-
+        return {
+            "status": "success",
+            "message": f"Message {message_id} marked as read"
+        }
+    finally:
+        try:
+            _close_imap_client(client)
+        except:
+            pass
 
 async def mark_as_unread(
     context: Context,
@@ -446,12 +639,19 @@ async def mark_as_unread(
     """
     username, password = require_auth(context)
 
-    with _get_imap_client(username, password) as client:
+    client = _get_imap_client(username, password)
+    
+    try:
         client.select_folder(folder)
         msg_id = int(message_id)
         client.remove_flags([msg_id], ['\\Seen'])
 
-    return {
-        "status": "success",
-        "message": f"Message {message_id} marked as unread"
-    }
+        return {
+            "status": "success",
+            "message": f"Message {message_id} marked as unread"
+        }
+    finally:
+        try:
+            _close_imap_client(client)
+        except:
+            pass

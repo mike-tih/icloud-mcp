@@ -58,6 +58,7 @@ async def calendar_create_event(
     end: str,
     description: str = None,
     location: str = None,
+    attendees: list = None,
     calendar_id: str = None
 ) -> dict:
     """
@@ -69,10 +70,11 @@ async def calendar_create_event(
         end: End datetime in ISO format (e.g., "2025-11-15T11:00:00")
         description: Event description (optional)
         location: Event location (optional)
+        attendees: List of attendee email addresses to invite (optional)
         calendar_id: Target calendar URL/ID (optional)
     """
     try:
-        return await calendar.create_event(context, summary, start, end, description, location, calendar_id)
+        return await calendar.create_event(context, summary, start, end, description, location, attendees, calendar_id)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:
@@ -87,7 +89,8 @@ async def calendar_update_event(
     start: str = None,
     end: str = None,
     description: str = None,
-    location: str = None
+    location: str = None,
+    attendees: list = None
 ) -> dict:
     """
     Update an existing calendar event.
@@ -99,9 +102,10 @@ async def calendar_update_event(
         end: New end datetime in ISO format (optional)
         description: New description (optional)
         location: New location (optional)
+        attendees: New list of attendee email addresses (optional, replaces existing)
     """
     try:
-        return await calendar.update_event(context, event_id, summary, start, end, description, location)
+        return await calendar.update_event(context, event_id, summary, start, end, description, location, attendees)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:
@@ -336,6 +340,29 @@ async def email_get_message(
     """
     try:
         return await email_module.get_message(context, message_id, folder, include_body)
+    except AuthenticationError as e:
+        return {"error": str(e), "status": 401}
+    except Exception as e:
+        return {"error": str(e), "status": 500}
+
+
+@mcp.tool()
+async def email_get_messages(
+    context,
+    message_ids: list,
+    folder: str = "INBOX",
+    include_body: bool = True
+) -> list:
+    """
+    Get multiple messages at once (bulk fetch).
+
+    Args:
+        message_ids: List of message IDs to fetch
+        folder: Folder name (default: INBOX)
+        include_body: Include message body content (default: True)
+    """
+    try:
+        return await email_module.get_messages(context, message_ids, folder, include_body)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:
