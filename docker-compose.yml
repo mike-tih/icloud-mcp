@@ -21,6 +21,6 @@ services:
       - SMTP_PORT=${SMTP_PORT:-587}
 
     # For HTTP/SSE transport
-    command: python -c "from src.icloud_mcp.server import run_http; run_http()"
+    command: python -c "from icloud_mcp.server import run_http; run_http()"
 
     restart: unless-stopped

@@ -44,7 +44,7 @@ MCP (Model Context Protocol) server for iCloud integration, providing tools for 
 
 ### Prerequisites
 
-- Python 3.10+
+- **Python 3.10 - 3.12** (Python 3.13+ not yet supported due to dependency compatibility)
 - iCloud account with App-Specific Password ([Generate here](https://appleid.apple.com/account/manage))
 
 ### Local Installation
@@ -54,8 +54,8 @@ MCP (Model Context Protocol) server for iCloud integration, providing tools for 
 git clone <repository-url>
 cd icloud-mcp
 
-# Create virtual environment
-python -m venv venv
+# Create virtual environment with Python 3.10-3.12
+python3.12 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install package in editable mode
@@ -144,8 +144,6 @@ The server will be available at `http://localhost:8000`.
 
 ## Integration with Claude Desktop
 
-### Method 1: Local Execution with stdio (Recommended)
-
 This method allows Claude Desktop to directly launch the MCP server as a subprocess.
 
 **Step 1:** Install dependencies locally:
@@ -216,36 +214,6 @@ cp .env.example .env
 
 **Step 5:** Restart Claude Desktop completely (Quit and reopen)
 
-### Method 2: Connect to Docker Server (HTTP Transport)
-
-If you prefer running the server in Docker separately:
-
-**Step 1:** Configure `.env` file and start Docker:
-```bash
-cp .env.example .env
-# Edit .env with your credentials
-docker-compose up -d
-```
-
-**Step 2:** Add this to Claude Desktop configuration:
-
-```json
-{
-  "mcpServers": {
-    "icloud": {
-      "transport": {
-        "type": "sse",
-        "url": "http://localhost:8000/sse"
-      }
-    }
-  }
-}
-```
-
-Note: Credentials are read from the `.env` file in Docker, so no need to include them in the config.
-
-**Step 3:** Restart Claude Desktop
-
 ### Verification
 
 After restarting Claude Desktop:
@@ -265,6 +233,7 @@ After restarting Claude Desktop:
 - View logs: Help → Show Logs in Claude Desktop
 - Verify the path to `run.py` is absolute (not relative)
 - Ensure Python is in your PATH
+- Check that you're using Python 3.10-3.12 (not 3.13+)
 
 **401 Authentication errors:**
 - Ensure you're using an **App-Specific Password**, not your regular Apple password
@@ -348,41 +317,6 @@ black src/
 # Lint code
 ruff check src/
 ```
-
-## Troubleshooting
-
-### Authentication Errors
-
-- Ensure you're using an **App-Specific Password**, not your regular iCloud password
-- Generate one at: https://appleid.apple.com/account/manage
-- Check that headers or environment variables are correctly set
-
-### Connection Issues
-
-- Verify your iCloud credentials are correct
-- Check that you can access iCloud web interface
-- Ensure firewall allows connections to iCloud servers
-- For corporate networks, check proxy settings
-- Verify network domains are in the allowed list for Claude Desktop
-
-### Calendar/Contact Operations
-
-- Some operations may require specific iCloud subscription levels
-- Calendar and contact IDs are URLs - store them for later operations
-- Date formats must be ISO 8601 (e.g., "2025-11-15T10:00:00")
-- Contacts require proper network configuration in Claude Desktop
-
-### Email Operations
-
-- IMAP folder names are case-sensitive
-- Message IDs are specific to folders
-- Moving messages may take a moment to reflect in iCloud web interface
-
-## Known Limitations
-
-- Contact photos are not supported in the current implementation
-- Some advanced CalDAV features may not be available
-- Email attachments handling is limited in current version
 
 ## License
 

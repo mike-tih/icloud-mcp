@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -7,12 +7,12 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
+# Copy project files
+COPY pyproject.toml .
 COPY src/ ./src/
+
+# Install package and dependencies
+RUN pip install --no-cache-dir -e .
 
 # Set Python path
 ENV PYTHONPATH=/app
@@ -21,4 +21,4 @@ ENV PYTHONPATH=/app
 EXPOSE 8000
 
 # Default to stdio transport, can be overridden
-CMD ["python", "-m", "src.icloud_mcp.server"]
+CMD ["python", "-m", "icloud_mcp.server"]
