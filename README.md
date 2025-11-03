@@ -32,6 +32,7 @@ MCP (Model Context Protocol) server for iCloud integration, providing tools for 
 - `email_list_folders` - List mail folders
 - `email_list_messages` - List messages in folder
 - `email_get_message` - Get full message details
+- `email_get_messages` - Get multiple messages at once (bulk fetch)
 - `email_search` - Search messages by text
 - `email_send` - Send email via SMTP
 - `email_move` - Move message to folder
@@ -57,8 +58,8 @@ cd icloud-mcp
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install package in editable mode
+pip install -e .
 
 # Configure environment
 cp .env.example .env
@@ -126,7 +127,7 @@ If credentials are not found in either location, the server returns a 401 error.
 python run.py
 
 # Or using the module
-python -m src.icloud_mcp.server
+python -m icloud_mcp.server
 ```
 
 ### Server Usage (HTTP/SSE transport)
@@ -149,7 +150,7 @@ This method allows Claude Desktop to directly launch the MCP server as a subproc
 
 **Step 1:** Install dependencies locally:
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
 **Step 2:** Create a `.env` file with your credentials:
@@ -171,13 +172,23 @@ cp .env.example .env
   "mcpServers": {
     "icloud": {
       "command": "python",
-      "args": ["/absolute/path/to/icloud-mcp/run.py"]
+      "args": ["/absolute/path/to/icloud-mcp/run.py"],
+      "network": {
+        "enabled": true,
+        "allowedDomains": [
+          "caldav.icloud.com",
+          "contacts.icloud.com",
+          "*.contacts.icloud.com",
+          "imap.mail.me.com",
+          "smtp.mail.me.com"
+        ]
+      }
     }
   }
 }
 ```
 
-Replace `/absolute/path/to/icloud-mcp/` with the actual full path to your project directory.
+**Important:** Replace `/absolute/path/to/icloud-mcp/` with the actual full path to your project directory.
 
 **Example on macOS:**
 ```json
@@ -185,11 +196,23 @@ Replace `/absolute/path/to/icloud-mcp/` with the actual full path to your projec
   "mcpServers": {
     "icloud": {
       "command": "python",
-      "args": ["/Users/username/Projects/icloud-mcp/run.py"]
+      "args": ["/Users/username/Projects/icloud-mcp/run.py"],
+      "network": {
+        "enabled": true,
+        "allowedDomains": [
+          "caldav.icloud.com",
+          "contacts.icloud.com",
+          "*.contacts.icloud.com",
+          "imap.mail.me.com",
+          "smtp.mail.me.com"
+        ]
+      }
     }
   }
 }
 ```
+
+**Note:** The `network.allowedDomains` configuration is **required** for contacts to work properly, as the server needs to access iCloud's CardDAV servers.
 
 **Step 5:** Restart Claude Desktop completely (Quit and reopen)
 
@@ -241,61 +264,22 @@ After restarting Claude Desktop:
 - Check JSON syntax in config file (use a JSON validator)
 - View logs: Help → Show Logs in Claude Desktop
 - Verify the path to `run.py` is absolute (not relative)
+- Ensure Python is in your PATH
 
 **401 Authentication errors:**
 - Ensure you're using an **App-Specific Password**, not your regular Apple password
 - Generate one at: https://appleid.apple.com/account/manage
 - Check `.env` file has correct credentials
 
+**Contacts not working (empty results or errors):**
+- Ensure you've added the `network.allowedDomains` configuration to Claude Desktop config
+- The domains `contacts.icloud.com` and `*.contacts.icloud.com` must be in the allowed list
+- Restart Claude Desktop after updating the config
+
 **Tools fail with 500 errors:**
 - Check server logs for details
 - Verify iCloud credentials are valid
 - Ensure network connectivity to iCloud servers
-
-### Example: Using with MCP Client
-
-```python
-import requests
-
-headers = {
-    "X-Apple-Email": "your-email@icloud.com",
-    "X-Apple-App-Specific-Password": "xxxx-xxxx-xxxx-xxxx"
-}
-
-# List calendars
-response = requests.post(
-    "http://localhost:8000/mcp/v1/tools/calendar_list_calendars",
-    headers=headers,
-    json={}
-)
-print(response.json())
-
-# Create event
-response = requests.post(
-    "http://localhost:8000/mcp/v1/tools/calendar_create_event",
-    headers=headers,
-    json={
-        "summary": "Team Meeting",
-        "start": "2025-11-15T10:00:00",
-        "end": "2025-11-15T11:00:00",
-        "description": "Weekly sync meeting",
-        "location": "Conference Room A"
-    }
-)
-print(response.json())
-
-# Send email
-response = requests.post(
-    "http://localhost:8000/mcp/v1/tools/email_send",
-    headers=headers,
-    json={
-        "to": "recipient@example.com",
-        "subject": "Hello from iCloud MCP",
-        "body": "This is a test email sent via the MCP server."
-    }
-)
-print(response.json())
-```
 
 ## Architecture
 
@@ -307,12 +291,19 @@ The server is fully stateless:
 - Connections to iCloud services are created per-request and closed immediately
 - Perfect for horizontal scaling and serverless deployments
 
+### Technical Implementation
+
+- **Calendar (CalDAV)**: Uses `caldav` library for standard CalDAV operations
+- **Contacts (CardDAV)**: Direct HTTP/WebDAV implementation using `requests` with proper RFC 6352 CardDAV protocol
+- **Email (IMAP/SMTP)**: Uses `imapclient` for IMAP and standard `smtplib` for SMTP
+
 ### Security Considerations
 
 - Always use HTTPS in production when using HTTP transport
 - Store App-Specific Passwords securely (use secret management tools)
 - Consider using header-based authentication for multi-user scenarios
 - Never commit `.env` file to version control
+- Network access is restricted to allowed iCloud domains only
 
 ## Development
 
@@ -326,15 +317,14 @@ icloud-mcp/
 │       ├── config.py       # Configuration management
 │       ├── auth.py         # Authentication handling
 │       ├── calendar.py     # CalDAV tools
-│       ├── contacts.py     # CardDAV tools
+│       ├── contacts.py     # CardDAV tools (direct HTTP/WebDAV)
 │       ├── email.py        # IMAP/SMTP tools
 │       └── server.py       # FastMCP server and tool registration
 ├── .env.example            # Example environment configuration
 ├── .gitignore
 ├── Dockerfile
 ├── docker-compose.yml
-├── pyproject.toml
-├── requirements.txt
+├── pyproject.toml          # Python project configuration and dependencies
 ├── run.py                  # Entry point script
 └── README.md
 ```
@@ -373,18 +363,26 @@ ruff check src/
 - Check that you can access iCloud web interface
 - Ensure firewall allows connections to iCloud servers
 - For corporate networks, check proxy settings
+- Verify network domains are in the allowed list for Claude Desktop
 
 ### Calendar/Contact Operations
 
 - Some operations may require specific iCloud subscription levels
 - Calendar and contact IDs are URLs - store them for later operations
 - Date formats must be ISO 8601 (e.g., "2025-11-15T10:00:00")
+- Contacts require proper network configuration in Claude Desktop
 
 ### Email Operations
 
 - IMAP folder names are case-sensitive
 - Message IDs are specific to folders
 - Moving messages may take a moment to reflect in iCloud web interface
+
+## Known Limitations
+
+- Contact photos are not supported in the current implementation
+- Some advanced CalDAV features may not be available
+- Email attachments handling is limited in current version
 
 ## License
 
@@ -409,6 +407,7 @@ For issues and questions:
 
 Built with:
 - [FastMCP](https://github.com/jlowin/fastmcp) - MCP server framework
-- [caldav](https://github.com/python-caldav/caldav) - CalDAV/CardDAV library
+- [caldav](https://github.com/python-caldav/caldav) - CalDAV library for calendar operations
+- [requests](https://github.com/psf/requests) - HTTP library for CardDAV operations
 - [IMAPClient](https://github.com/mjs/imapclient) - IMAP library
 - [vobject](https://github.com/py-vobject/vobject) - vCard/iCalendar parsing

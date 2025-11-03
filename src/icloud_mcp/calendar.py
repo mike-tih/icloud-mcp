@@ -122,7 +122,7 @@ async def list_events(
                                 start_value = start_value.isoformat()
                             else:
                                 start_value = str(start_value)
-                        except:
+                        except Exception as _e:
                             pass
 
                     if hasattr(vevent, 'dtend') and vevent.dtend:
@@ -132,7 +132,7 @@ async def list_events(
                                 end_value = end_value.isoformat()
                             else:
                                 end_value = str(end_value)
-                        except:
+                        except Exception as _e:
                             pass
 
                     result.append({
@@ -145,10 +145,10 @@ async def list_events(
                         "calendar": calendar.name or "Unknown",
                         "url": str(event.url)
                     })
-                except Exception as e:
+                except Exception as _e:
                     # Skip malformed events
                     continue
-        except Exception as e:
+        except Exception as _e:
             # Skip calendars that fail to search
             continue
 

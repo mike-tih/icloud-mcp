@@ -9,6 +9,7 @@ dependencies = [
     "vobject>=0.9.6",
     "imapclient>=3.0.1",
     "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
 ]
 
 [build-system]

@@ -42,7 +42,7 @@ def _close_imap_client(client: IMAPClient) -> None:
         # Just close the underlying socket
         if hasattr(client, '_imap') and hasattr(client._imap, 'sock'):
             client._imap.sock.close()
-    except:
+    except Exception as _e:
         pass  # Silently ignore errors on close
 
 
@@ -66,7 +66,7 @@ def _decode_mime_header(header_value: str) -> str:
         if isinstance(content, bytes):
             try:
                 result.append(content.decode(charset or 'utf-8', errors='ignore'))
-            except:
+            except Exception as _e:
                 result.append(content.decode('utf-8', errors='ignore'))
         else:
             result.append(str(content))
@@ -97,12 +97,12 @@ async def list_folders(context: Context) -> List[Dict[str, Any]]:
             })
 
         return result
-    except Exception as e:
+    except Exception as _e:
         raise
     finally:
         try:
             _close_imap_client(client)
-        except:
+        except Exception as _e:
             pass
 
 
@@ -161,17 +161,17 @@ async def list_messages(
                     "flags": [flag.decode() if isinstance(flag, bytes) else flag for flag in data[b'FLAGS']],
                     "folder": folder
                 })
-            except Exception as e:
+            except Exception as _e:
                 continue
 
         return result
 
-    except Exception as e:
+    except Exception as _e:
         raise
     finally:
         try:
             _close_imap_client(client)
-        except:
+        except Exception as _e:
             pass
 
 async def get_message(
@@ -243,17 +243,17 @@ async def get_message(
                     if content_type == "text/plain":
                         try:
                             body_text = part.get_payload(decode=True).decode('utf-8', errors='ignore')
-                        except:
+                        except Exception as _e:
                             pass
                     elif content_type == "text/html":
                         try:
                             body_html = part.get_payload(decode=True).decode('utf-8', errors='ignore')
-                        except:
+                        except Exception as _e:
                             pass
             else:
                 try:
                     body_text = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
-                except:
+                except Exception as _e:
                     pass
 
             result["body_text"] = body_text
@@ -261,12 +261,12 @@ async def get_message(
 
         return result
 
-    except Exception as e:
+    except Exception as _e:
         raise
     finally:
         try:
             _close_imap_client(client)
-        except:
+        except Exception as _e:
             pass
 
 
@@ -343,17 +343,17 @@ async def get_messages(
                         if content_type == "text/plain":
                             try:
                                 body_text = part.get_payload(decode=True).decode('utf-8', errors='ignore')
-                            except:
+                            except Exception as _e:
                                 pass
                         elif content_type == "text/html":
                             try:
                                 body_html = part.get_payload(decode=True).decode('utf-8', errors='ignore')
-                            except:
+                            except Exception as _e:
                                 pass
                 else:
                     try:
                         body_text = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
-                    except:
+                    except Exception as _e:
                         pass
 
                 result["body_text"] = body_text
@@ -363,12 +363,12 @@ async def get_messages(
 
         return results
 
-    except Exception as e:
+    except Exception as _e:
         raise
     finally:
         try:
             _close_imap_client(client)
-        except:
+        except Exception as _e:
             pass
 
 async def search_messages(
@@ -425,7 +425,7 @@ async def search_messages(
                     "flags": [flag.decode() if isinstance(flag, bytes) else flag for flag in data[b'FLAGS']],
                     "folder": folder
                 })
-            except:
+            except Exception as _e:
                 continue
 
         return result
@@ -434,7 +434,7 @@ async def search_messages(
     finally:
         try:
             _close_imap_client(client)
-        except:
+        except Exception as _e:
             pass
 
 async def send_message(
@@ -532,7 +532,7 @@ async def move_message(
     finally:
         try:
             _close_imap_client(client)
-        except:
+        except Exception as _e:
             pass
 
 async def delete_message(
@@ -572,7 +572,7 @@ async def delete_message(
                 client.delete_messages([msg_id])
                 client.expunge()
                 message = f"Message {message_id} moved to Trash"
-            except:
+            except Exception as _e:
                 # Fallback to permanent delete if Trash doesn't exist
                 client.delete_messages([msg_id])
                 client.expunge()
@@ -585,7 +585,7 @@ async def delete_message(
     finally:
         try:
             _close_imap_client(client)
-        except:
+        except Exception as _e:
             pass
 
 async def mark_as_read(
@@ -619,7 +619,7 @@ async def mark_as_read(
     finally:
         try:
             _close_imap_client(client)
-        except:
+        except Exception as _e:
             pass
 
 async def mark_as_unread(
@@ -653,5 +653,5 @@ async def mark_as_unread(
     finally:
         try:
             _close_imap_client(client)
-        except:
+        except Exception as _e:
             pass
