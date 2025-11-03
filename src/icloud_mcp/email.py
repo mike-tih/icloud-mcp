@@ -4,6 +4,8 @@ import imaplib
 import smtplib
 import email
 import logging
+import sys
+import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import decode_header
@@ -14,19 +16,37 @@ from imapclient import IMAPClient
 from .auth import require_auth
 from .config import config
 
-# Configure logging
+# Configure logging to both file and stderr
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    filename='/tmp/icloud_mcp_email.log'
-)
+logger.setLevel(logging.DEBUG)
+
+# Create formatters
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+# Log to home directory
+log_file = os.path.expanduser('~/icloud_mcp_email.log')
+file_handler = logging.FileHandler(log_file)
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
+# Also log to stderr (will show in Claude Desktop logs)
+stderr_handler = logging.StreamHandler(sys.stderr)
+stderr_handler.setLevel(logging.ERROR)  # Only errors to stderr
+stderr_handler.setFormatter(formatter)
+logger.addHandler(stderr_handler)
+
+logger.info(f"Email module loaded, logging to {log_file}")
 
 
 def _get_imap_client(username: str, password: str) -> IMAPClient:
     """Create IMAP client (stateless)."""
+    print(f"[ICLOUD_MCP] Creating IMAP client to {config.IMAP_SERVER}:{config.IMAP_PORT}", file=sys.stderr)
+    logger.debug(f"Creating IMAPClient: server={config.IMAP_SERVER}, port={config.IMAP_PORT}, ssl=True, use_uid=True")
     client = IMAPClient(config.IMAP_SERVER, port=config.IMAP_PORT, ssl=True, use_uid=True)
+    print(f"[ICLOUD_MCP] IMAP client created, logging in as {username[:3]}***", file=sys.stderr)
     client.login(username, password)
+    print(f"[ICLOUD_MCP] IMAP login successful!", file=sys.stderr)
     return client
 
 
@@ -82,9 +102,12 @@ async def list_folders(context: Context) -> List[Dict[str, Any]]:
     Returns:
         List of folders with name and flags
     """
+    print("[ICLOUD_MCP] list_folders CALLED", file=sys.stderr)
     try:
         logger.info("list_folders called")
+        print("[ICLOUD_MCP] About to require_auth", file=sys.stderr)
         username, password = require_auth(context)
+        print(f"[ICLOUD_MCP] Auth OK for {username[:3]}***", file=sys.stderr)
         logger.debug(f"Auth successful for user: {username[:3]}***")
 
         logger.debug(f"Creating IMAP client to {config.IMAP_SERVER}:{config.IMAP_PORT}")
@@ -132,13 +155,16 @@ async def list_messages(
     Returns:
         List of messages with basic info
     """
+    print(f"[ICLOUD_MCP] list_messages CALLED: folder={folder}, limit={limit}", file=sys.stderr)
     try:
         logger.info(f"list_messages called: folder={folder}, limit={limit}, unread_only={unread_only}")
         username, password = require_auth(context)
         logger.debug(f"Auth successful")
 
+        print("[ICLOUD_MCP] About to get IMAP client", file=sys.stderr)
         client = _get_imap_client(username, password)
         logger.debug("IMAP client created")
+        print("[ICLOUD_MCP] IMAP client obtained", file=sys.stderr)
 
         logger.debug(f"Selecting folder: {folder}")
         client.select_folder(folder)
