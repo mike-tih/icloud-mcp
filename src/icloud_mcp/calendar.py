@@ -3,6 +3,7 @@
 import caldav
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
+from urllib.parse import urlparse
 from fastmcp import Context
 from .auth import require_auth
 from .config import config
@@ -287,11 +288,16 @@ async def update_event(
         Updated event details
     """
     email, password = require_auth(context)
-    client = _get_caldav_client(email, password)
+
+    # Create a client with the correct base URL for this specific event
+    # This prevents URL joining errors when event is on a different server (e.g., p72-caldav.icloud.com)
+    parsed = urlparse(event_id)
+    event_base_url = f"{parsed.scheme}://{parsed.netloc}"
+    event_client = caldav.DAVClient(url=event_base_url, username=email, password=password)
 
     try:
-        # Load existing event using CalendarObjectResource (handles full URLs correctly)
-        event = caldav.CalendarObjectResource(client=client, url=event_id)
+        # Load existing event using CalendarObjectResource
+        event = caldav.CalendarObjectResource(client=event_client, url=event_id)
         event.load()
     except Exception as e:
         raise Exception(f"Error loading event: {str(e)}")
@@ -370,10 +376,15 @@ async def delete_event(context: Context, event_id: str) -> Dict[str, str]:
         Confirmation message
     """
     email, password = require_auth(context)
-    client = _get_caldav_client(email, password)
+
+    # Create a client with the correct base URL for this specific event
+    # This prevents URL joining errors when event is on a different server (e.g., p72-caldav.icloud.com)
+    parsed = urlparse(event_id)
+    event_base_url = f"{parsed.scheme}://{parsed.netloc}"
+    event_client = caldav.DAVClient(url=event_base_url, username=email, password=password)
 
     # Use CalendarObjectResource to handle full URLs correctly
-    event = caldav.CalendarObjectResource(client=client, url=event_id)
+    event = caldav.CalendarObjectResource(client=event_client, url=event_id)
     event.delete()
 
     return {"status": "success", "message": f"Event {event_id} deleted"}
