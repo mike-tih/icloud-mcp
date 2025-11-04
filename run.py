@@ -9,6 +9,7 @@ Usage:
 
 import sys
 import argparse
+import os
 
 
 def main():
@@ -28,17 +29,22 @@ def main():
     args = parser.parse_args()
 
     # Import after parsing to allow --help without dependencies
-    from src.icloud_mcp.server import run, run_http
-    from src.icloud_mcp.config import config
+    try:
+        # Try installed package first (for Docker/production)
+        from icloud_mcp.server import mcp
+        from icloud_mcp.config import config
+    except ImportError:
+        # Fall back to development mode
+        from src.icloud_mcp.server import mcp
+        from src.icloud_mcp.config import config
 
     if args.http:
-        if args.port:
-            config.MCP_SERVER_PORT = args.port
-        print(f"Starting iCloud MCP Server on HTTP port {config.MCP_SERVER_PORT}")
-        run_http()
+        port = args.port or int(os.environ.get("PORT", config.MCP_SERVER_PORT))
+        print(f"Starting iCloud MCP Server on HTTP port {port}")
+        mcp.run(transport="sse", host="0.0.0.0", port=port)
     else:
         print("Starting iCloud MCP Server with stdio transport", file=sys.stderr)
-        run()
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

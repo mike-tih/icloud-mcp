@@ -9,6 +9,21 @@ mcp = FastMCP("iCloud MCP Server")
 
 
 # ============================================================================
+# Health Check Endpoint
+# ============================================================================
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request):
+    """Health check endpoint for Cloud Run and Docker."""
+    from starlette.responses import JSONResponse
+    return JSONResponse({
+        "status": "healthy",
+        "service": "icloud-mcp",
+        "transport": "sse"
+    })
+
+
+# ============================================================================
 # Calendar Tools (CalDAV)
 # ============================================================================
 
@@ -58,7 +73,7 @@ async def calendar_create_event(
     end: str,
     description: str = None,
     location: str = None,
-    attendees: list = None,
+    attendees: list[str] = None,
     calendar_id: str = None
 ) -> dict:
     """
@@ -90,7 +105,7 @@ async def calendar_update_event(
     end: str = None,
     description: str = None,
     location: str = None,
-    attendees: list = None
+    attendees: list[str] = None
 ) -> dict:
     """
     Update an existing calendar event.
@@ -193,9 +208,9 @@ async def contacts_get(context, contact_id: str) -> dict:
 async def contacts_create(
     context,
     name: str,
-    phones: list = None,
-    emails: list = None,
-    addresses: list = None,
+    phones: list[str] = None,
+    emails: list[str] = None,
+    addresses: list[str] = None,
     organization: str = None,
     title: str = None
 ) -> dict:
@@ -223,9 +238,9 @@ async def contacts_update(
     context,
     contact_id: str,
     name: str = None,
-    phones: list = None,
-    emails: list = None,
-    addresses: list = None,
+    phones: list[str] = None,
+    emails: list[str] = None,
+    addresses: list[str] = None,
     organization: str = None,
     title: str = None
 ) -> dict:
@@ -349,7 +364,7 @@ async def email_get_message(
 @mcp.tool()
 async def email_get_messages(
     context,
-    message_ids: list,
+    message_ids: list[str],
     folder: str = "INBOX",
     include_body: bool = True
 ) -> list:

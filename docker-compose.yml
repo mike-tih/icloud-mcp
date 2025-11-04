@@ -7,20 +7,15 @@ services:
     ports:
       - "${MCP_SERVER_PORT:-8000}:8000"
     environment:
-      # iCloud credentials
-      - ICLOUD_EMAIL=${ICLOUD_EMAIL}
-      - ICLOUD_APP_SPECIFIC_PASSWORD=${ICLOUD_APP_SPECIFIC_PASSWORD}
+      # iCloud credentials (optional, can use headers instead)
+      - ICLOUD_EMAIL=${ICLOUD_EMAIL:-}
+      - ICLOUD_APP_SPECIFIC_PASSWORD=${ICLOUD_APP_SPECIFIC_PASSWORD:-}
 
       # Server configuration (optional, defaults provided)
       - CALDAV_SERVER=${CALDAV_SERVER:-https://caldav.icloud.com}
       - CARDDAV_SERVER=${CARDDAV_SERVER:-https://contacts.icloud.com}
       - IMAP_SERVER=${IMAP_SERVER:-imap.mail.me.com}
       - SMTP_SERVER=${SMTP_SERVER:-smtp.mail.me.com}
-      - MCP_SERVER_PORT=${MCP_SERVER_PORT:-8000}
-      - IMAP_PORT=${IMAP_PORT:-993}
-      - SMTP_PORT=${SMTP_PORT:-587}
-
-    # For HTTP/SSE transport
-    command: python -c "from icloud_mcp.server import run_http; run_http()"
+      - PORT=8000
 
     restart: unless-stopped
