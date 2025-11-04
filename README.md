@@ -7,7 +7,7 @@ MCP (Model Context Protocol) server for iCloud integration, providing tools for 
 - **Stateless Architecture**: No state stored between requests
 - **Full CRUD Operations**: Complete management of calendars, contacts, and email
 - **Flexible Authentication**: Via headers or environment variables
-- **Multiple Transports**: stdio (local) or HTTP/SSE (server)
+- **Multiple Transports**: stdio (local) or Streamable HTTP (server)
 - **Docker Support**: Easy deployment with Docker and Docker Compose
 
 ## Supported Operations
@@ -130,7 +130,7 @@ python run.py
 python -m icloud_mcp.server
 ```
 
-### Server Usage (HTTP/SSE transport)
+### Server Usage (Streamable HTTP transport)
 
 ```bash
 # Using Python
@@ -140,7 +140,7 @@ python run.py --http --port 8000
 docker-compose up
 ```
 
-The server will be available at `http://localhost:8000`.
+The server will be available at `http://localhost:8000/mcp`.
 
 ## Integration with Claude Desktop
 
@@ -262,9 +262,11 @@ The server is fully stateless:
 
 ### Technical Implementation
 
+- **Transport**: Streamable HTTP protocol with `/mcp` endpoint
 - **Calendar (CalDAV)**: Uses `caldav` library for standard CalDAV operations
 - **Contacts (CardDAV)**: Direct HTTP/WebDAV implementation using `requests` with proper RFC 6352 CardDAV protocol
 - **Email (IMAP/SMTP)**: Uses `imapclient` for IMAP and standard `smtplib` for SMTP
+- **Authentication**: Headers via `get_http_headers()` with environment variable fallback
 
 ### Security Considerations
 
