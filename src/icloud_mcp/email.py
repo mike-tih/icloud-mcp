@@ -507,6 +507,43 @@ async def send_message(
 
         client.send_message(msg, from_addr=username, to_addrs=recipients)
 
+    # Save copy to Sent folder via IMAP
+    imap_client = None
+    try:
+        imap_client = _get_imap_client(username, password)
+
+        # Add Date header if not present
+        if 'Date' not in msg:
+            from email.utils import formatdate
+            msg['Date'] = formatdate(localtime=True)
+
+        # Append message to Sent folder
+        # Convert message to bytes
+        msg_bytes = msg.as_bytes()
+
+        # Try to append to Sent folder
+        try:
+            imap_client.append(config.SENT_FOLDER, msg_bytes, flags=['\\Seen'])
+        except Exception as e:
+            # If Sent Messages folder doesn't exist, try common alternatives
+            for folder_name in ['Sent', 'Sent Items', config.SENT_FOLDER]:
+                try:
+                    imap_client.append(folder_name, msg_bytes, flags=['\\Seen'])
+                    break
+                except Exception:
+                    continue
+            else:
+                # Log error but don't fail the send operation
+                logger.error(f"Could not save to Sent folder: {e}")
+
+    except Exception as e:
+        # Log error but don't fail the send operation
+        logger.error(f"Error saving to Sent folder: {e}")
+
+    finally:
+        if imap_client:
+            _close_imap_client(imap_client)
+
     return {
         "status": "success",
         "message": f"Email sent to {to}"

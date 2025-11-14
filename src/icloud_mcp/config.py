@@ -22,6 +22,9 @@ class Config:
     IMAP_PORT: int = int(os.getenv("IMAP_PORT", "993"))
     SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
 
+    # Email folders
+    SENT_FOLDER: str = os.getenv("SENT_FOLDER", "Sent Messages")
+
     # Fallback credentials (if not provided in headers)
     FALLBACK_EMAIL: Optional[str] = os.getenv("ICLOUD_EMAIL")
     FALLBACK_PASSWORD: Optional[str] = os.getenv("ICLOUD_APP_SPECIFIC_PASSWORD")
