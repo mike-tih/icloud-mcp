@@ -389,47 +389,67 @@ async def search_messages(
         List of matching messages
     """
     username, password = require_auth(context)
-
     client = _get_imap_client(username, password)
-    
+
     try:
         client.select_folder(folder)
 
-        # Search by subject or from
-        messages = client.search([
-            'OR',
-            ['SUBJECT', query],
-            ['FROM', query]
-        ])
+        # Try server-side search with UTF-8 charset (RFC 2978)
+        # This works with modern IMAP servers including iCloud
+        try:
+            # Search by subject or from using UTF-8 charset
+            messages = client.search(
+                ['OR', ['SUBJECT', query], ['FROM', query]],
+                charset='UTF-8'
+            )
 
-        message_ids = list(messages)[-limit:] if len(messages) > limit else list(messages)
-        message_ids.reverse()
+            message_ids = list(messages)[-limit:] if len(messages) > limit else list(messages)
+            message_ids.reverse()
 
-        if not message_ids:
-            return []
+            if not message_ids:
+                return []
 
-        response = client.fetch(message_ids, ['FLAGS', 'RFC822.HEADER'])
+            response = client.fetch(message_ids, ['FLAGS', 'RFC822.HEADER'])
 
-        result = []
-        for msg_id, data in response.items():
-            try:
-                header_data = data[b'RFC822.HEADER']
-                msg = email.message_from_bytes(header_data)
+            result = []
+            for msg_id, data in response.items():
+                try:
+                    header_data = data[b'RFC822.HEADER']
+                    msg = email.message_from_bytes(header_data)
 
-                result.append({
-                    "id": str(msg_id),
-                    "subject": _decode_mime_header(msg.get('Subject', '')),
-                    "from": _decode_mime_header(msg.get('From', '')),
-                    "to": _decode_mime_header(msg.get('To', '')),
-                    "date": msg.get('Date', ''),
-                    "flags": [flag.decode() if isinstance(flag, bytes) else flag for flag in data[b'FLAGS']],
-                    "folder": folder
-                })
-            except Exception as _e:
-                continue
+                    result.append({
+                        "id": str(msg_id),
+                        "subject": _decode_mime_header(msg.get('Subject', '')),
+                        "from": _decode_mime_header(msg.get('From', '')),
+                        "to": _decode_mime_header(msg.get('To', '')),
+                        "date": msg.get('Date', ''),
+                        "flags": [flag.decode() if isinstance(flag, bytes) else flag for flag in data[b'FLAGS']],
+                        "folder": folder
+                    })
+                except Exception as _e:
+                    continue
 
-        return result
+            return result
 
+        except Exception as charset_error:
+            # Fallback: If CHARSET UTF-8 is not supported by server,
+            # fall back to local filtering (less efficient but always works)
+            logger.error(f"Server-side UTF-8 search failed: {charset_error}. Falling back to local filtering.")
+
+            # Fetch more messages to search through locally
+            fetch_limit = max(limit * 10, 200)
+            all_messages = await list_messages(context, folder, fetch_limit, unread_only=False)
+
+            # Filter messages locally (supports any Unicode)
+            query_lower = query.lower()
+            filtered_messages = [
+                msg for msg in all_messages
+                if query_lower in msg.get("subject", "").lower()
+                or query_lower in msg.get("from", "").lower()
+                or query_lower in msg.get("to", "").lower()
+            ]
+
+            return filtered_messages[:limit]
 
     finally:
         try:
