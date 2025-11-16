@@ -1,9 +1,12 @@
 """CalDAV tools for calendar management."""
 
 import caldav
+import smtplib
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from fastmcp import Context
 from .auth import require_auth
 from .config import config
@@ -16,6 +19,117 @@ def _get_caldav_client(email: str, password: str) -> caldav.DAVClient:
         username=email,
         password=password
     )
+
+
+def _send_calendar_invitation(
+    organizer_email: str,
+    organizer_password: str,
+    attendee_email: str,
+    ical_data: str,
+    summary: str,
+    start: str,
+    end: str,
+    location: Optional[str] = None,
+    method: str = "REQUEST"
+) -> None:
+    """
+    Send calendar invitation via email (iTIP protocol).
+
+    Args:
+        organizer_email: Organizer's email address
+        organizer_password: Organizer's password
+        attendee_email: Attendee's email address
+        ical_data: iCalendar data (VCALENDAR format)
+        summary: Event summary
+        start: Start datetime string
+        end: End datetime string
+        location: Event location (optional)
+        method: iTIP method (REQUEST, CANCEL, etc.)
+    """
+    # Create multipart message
+    msg = MIMEMultipart('alternative')
+    msg['From'] = organizer_email
+    msg['To'] = attendee_email
+    msg['Subject'] = f"Invitation: {summary}"
+
+    # Add Date header
+    from email.utils import formatdate
+    msg['Date'] = formatdate(localtime=True)
+
+    # Create plain text part
+    text_body = f"""You have been invited to the following event:
+
+Summary: {summary}
+Start: {start}
+End: {end}"""
+
+    if location:
+        text_body += f"\nLocation: {location}"
+
+    text_body += f"\n\nOrganizer: {organizer_email}"
+
+    msg.attach(MIMEText(text_body, 'plain'))
+
+    # Modify iCalendar data to include METHOD
+    # Replace the first line with VCALENDAR and METHOD
+    ical_lines = ical_data.strip().split('\n')
+    if ical_lines[0] == 'BEGIN:VCALENDAR':
+        # Insert METHOD after BEGIN:VCALENDAR
+        ical_lines.insert(1, f'METHOD:{method}')
+        ical_with_method = '\n'.join(ical_lines)
+    else:
+        ical_with_method = ical_data
+
+    # Add organizer to the VEVENT if not present
+    if 'ORGANIZER' not in ical_with_method:
+        # Insert ORGANIZER after UID
+        ical_lines = ical_with_method.split('\n')
+        for i, line in enumerate(ical_lines):
+            if line.startswith('UID:'):
+                ical_lines.insert(i + 1, f'ORGANIZER;CN={organizer_email}:mailto:{organizer_email}')
+                break
+        ical_with_method = '\n'.join(ical_lines)
+
+    # Create calendar part with proper content type
+    cal_part = MIMEText(ical_with_method, 'calendar', 'utf-8')
+    cal_part.add_header('Content-Class', 'urn:content-classes:calendarmessage')
+    cal_part.add_header('Content-Type', f'text/calendar; method={method}; charset=UTF-8')
+    msg.attach(cal_part)
+
+    # Send via SMTP
+    smtp_client = smtplib.SMTP(config.SMTP_SERVER, config.SMTP_PORT)
+    try:
+        smtp_client.starttls()
+        smtp_client.login(organizer_email, organizer_password)
+        smtp_client.send_message(msg, from_addr=organizer_email, to_addrs=[attendee_email])
+    finally:
+        smtp_client.quit()
+
+    # Save copy to Sent folder via IMAP (same as regular emails)
+    try:
+        from .email import _get_imap_client, _close_imap_client
+
+        imap_client = _get_imap_client(organizer_email, organizer_password)
+        try:
+            # Convert message to bytes
+            msg_bytes = msg.as_bytes()
+
+            # Try to append to Sent folder
+            try:
+                imap_client.append(config.SENT_FOLDER, msg_bytes, flags=['\\Seen'])
+            except Exception:
+                # Try common alternatives
+                for folder_name in ['Sent', 'Sent Items', config.SENT_FOLDER]:
+                    try:
+                        imap_client.append(folder_name, msg_bytes, flags=['\\Seen'])
+                        break
+                    except Exception:
+                        continue
+        finally:
+            _close_imap_client(imap_client)
+    except Exception:
+        # Silently ignore errors saving to Sent folder
+        pass
 
 
 async def list_calendars(context: Context) -> List[Dict[str, Any]]:
@@ -249,6 +363,27 @@ SEQUENCE:0
         # If add_event fails, try save_event as fallback
         raise ValueError(f"Failed to create event in calendar '{calendar.name}': {str(e)}")
 
+    # Send email invitations to attendees (iTIP protocol)
+    if attendees:
+        for attendee_email in attendees:
+            try:
+                _send_calendar_invitation(
+                    organizer_email=email,
+                    organizer_password=password,
+                    attendee_email=attendee_email,
+                    ical_data=ical_data,
+                    summary=summary,
+                    start=start,
+                    end=end,
+                    location=location,
+                    method="REQUEST"
+                )
+            except Exception as e:
+                # Log error but don't fail the event creation
+                # The event is already created, we just failed to send the invitation
+                import logging
+                logging.error(f"Failed to send invitation to {attendee_email}: {e}")
+
     return {
         "id": str(event.url),
         "summary": summary,
@@ -355,6 +490,31 @@ async def update_event(
                 email_addr = str(att.value).replace('mailto:', '')
                 attendee_list.append(email_addr)
 
+    # Send update notifications to attendees if attendees were modified
+    if attendees is not None and attendee_list:
+        event_summary = str(vevent.summary.value) if hasattr(vevent, 'summary') else ""
+        event_start = vevent.dtstart.value.isoformat() if hasattr(vevent, 'dtstart') else start
+        event_end = vevent.dtend.value.isoformat() if hasattr(vevent, 'dtend') else end
+        event_location = str(vevent.location.value) if hasattr(vevent, 'location') else None
+
+        for attendee_email in attendee_list:
+            try:
+                _send_calendar_invitation(
+                    organizer_email=email,
+                    organizer_password=password,
+                    attendee_email=attendee_email,
+                    ical_data=updated_ical,
+                    summary=event_summary,
+                    start=event_start,
+                    end=event_end,
+                    location=event_location,
+                    method="REQUEST"  # Use REQUEST for updates too
+                )
+            except Exception as e:
+                # Log error but don't fail the update
+                import logging
+                logging.error(f"Failed to send update notification to {attendee_email}: {e}")
+
     return {
         "id": str(event.url),
         "summary": str(vevent.summary.value) if hasattr(vevent, 'summary') else "",
@@ -387,7 +547,65 @@ async def delete_event(context: Context, event_id: str) -> Dict[str, str]:
 
     # Use CalendarObjectResource to handle full URLs correctly
     event = caldav.CalendarObjectResource(client=event_client, url=event_id)
+
+    # Load event to get attendees before deleting
+    attendee_list = []
+    event_summary = ""
+    event_start = ""
+    event_end = ""
+    event_location = None
+    ical_data = None
+
+    try:
+        event.load()
+        vevent = event.vobject_instance.vevent
+
+        # Extract event details
+        event_summary = str(vevent.summary.value) if hasattr(vevent, 'summary') else "Event"
+        if hasattr(vevent, 'dtstart'):
+            event_start = vevent.dtstart.value.isoformat() if hasattr(vevent.dtstart.value, 'isoformat') else str(vevent.dtstart.value)
+        if hasattr(vevent, 'dtend'):
+            event_end = vevent.dtend.value.isoformat() if hasattr(vevent.dtend.value, 'isoformat') else str(vevent.dtend.value)
+        if hasattr(vevent, 'location'):
+            event_location = str(vevent.location.value)
+
+        # Extract attendees
+        if hasattr(vevent, 'attendee_list'):
+            for att in vevent.attendee_list:
+                if hasattr(att, 'value'):
+                    email_addr = str(att.value).replace('mailto:', '')
+                    attendee_list.append(email_addr)
+
+        # Get the iCalendar data for CANCEL notifications
+        ical_data = event.vobject_instance.serialize()
+
+    except Exception as e:
+        # If we can't load the event, just delete it
+        import logging
+        logging.warning(f"Could not load event details before deletion: {e}")
+
+    # Delete the event
     event.delete()
+
+    # Send cancellation notifications to attendees
+    if attendee_list and ical_data:
+        for attendee_email in attendee_list:
+            try:
+                _send_calendar_invitation(
+                    organizer_email=email,
+                    organizer_password=password,
+                    attendee_email=attendee_email,
+                    ical_data=ical_data,
+                    summary=event_summary,
+                    start=event_start,
+                    end=event_end,
+                    location=event_location,
+                    method="CANCEL"
+                )
+            except Exception as e:
+                # Log error but don't fail the deletion
+                import logging
+                logging.error(f"Failed to send cancellation to {attendee_email}: {e}")
 
     return {"status": "success", "message": f"Event {event_id} deleted"}
 
