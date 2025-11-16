@@ -343,7 +343,8 @@ async def email_get_message(
     context,
     message_id: str,
     folder: str = "INBOX",
-    include_body: bool = True
+    include_body: bool = True,
+    full_html: bool = False
 ) -> dict:
     """
     Get a specific message with full details.
@@ -352,9 +353,10 @@ async def email_get_message(
         message_id: Message ID
         folder: Folder name (default: INBOX)
         include_body: Include message body content (default: True)
+        full_html: Include full HTML body (default: False, only text body returned)
     """
     try:
-        return await email_module.get_message(context, message_id, folder, include_body)
+        return await email_module.get_message(context, message_id, folder, include_body, full_html)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:
@@ -366,7 +368,8 @@ async def email_get_messages(
     context,
     message_ids: list[str],
     folder: str = "INBOX",
-    include_body: bool = True
+    include_body: bool = True,
+    full_html: bool = False
 ) -> list:
     """
     Get multiple messages at once (bulk fetch).
@@ -375,9 +378,10 @@ async def email_get_messages(
         message_ids: List of message IDs to fetch
         folder: Folder name (default: INBOX)
         include_body: Include message body content (default: True)
+        full_html: Include full HTML body (default: False, only text body returned)
     """
     try:
-        return await email_module.get_messages(context, message_ids, folder, include_body)
+        return await email_module.get_messages(context, message_ids, folder, include_body, full_html)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:

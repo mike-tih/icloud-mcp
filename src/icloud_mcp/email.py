@@ -178,7 +178,8 @@ async def get_message(
     context: Context,
     message_id: str,
     folder: str = "INBOX",
-    include_body: bool = True
+    include_body: bool = True,
+    full_html: bool = False
 ) -> Dict[str, Any]:
     """
     Get a specific message with full details.
@@ -187,6 +188,7 @@ async def get_message(
         message_id: Message ID
         folder: Folder name (default: INBOX)
         include_body: Include message body content
+        full_html: Include full HTML body (default: False, only text body returned)
 
     Returns:
         Complete message details
@@ -245,7 +247,7 @@ async def get_message(
                             body_text = part.get_payload(decode=True).decode('utf-8', errors='ignore')
                         except Exception as _e:
                             pass
-                    elif content_type == "text/html":
+                    elif content_type == "text/html" and full_html:
                         try:
                             body_html = part.get_payload(decode=True).decode('utf-8', errors='ignore')
                         except Exception as _e:
@@ -257,7 +259,8 @@ async def get_message(
                     pass
 
             result["body_text"] = body_text
-            result["body_html"] = body_html
+            if full_html:
+                result["body_html"] = body_html
 
         return result
 
@@ -274,7 +277,8 @@ async def get_messages(
     context: Context,
     message_ids: List[str],
     folder: str = "INBOX",
-    include_body: bool = True
+    include_body: bool = True,
+    full_html: bool = False
 ) -> List[Dict[str, Any]]:
     """
     Get multiple messages at once.
@@ -283,6 +287,7 @@ async def get_messages(
         message_ids: List of message IDs to fetch
         folder: Folder name (default: INBOX)
         include_body: Include message body content
+        full_html: Include full HTML body (default: False, only text body returned)
 
     Returns:
         List of message details
@@ -345,7 +350,7 @@ async def get_messages(
                                 body_text = part.get_payload(decode=True).decode('utf-8', errors='ignore')
                             except Exception as _e:
                                 pass
-                        elif content_type == "text/html":
+                        elif content_type == "text/html" and full_html:
                             try:
                                 body_html = part.get_payload(decode=True).decode('utf-8', errors='ignore')
                             except Exception as _e:
@@ -357,7 +362,8 @@ async def get_messages(
                         pass
 
                 result["body_text"] = body_text
-                result["body_html"] = body_html
+                if full_html:
+                    result["body_html"] = body_html
 
             results.append(result)
 
@@ -409,13 +415,40 @@ async def search_messages(
             if not message_ids:
                 return []
 
-            response = client.fetch(message_ids, ['FLAGS', 'RFC822.HEADER'])
+            # Fetch full message body to extract body_text
+            response = client.fetch(message_ids, [b'FLAGS', b'BODY.PEEK[]'])
 
             result = []
             for msg_id, data in response.items():
                 try:
-                    header_data = data[b'RFC822.HEADER']
-                    msg = email.message_from_bytes(header_data)
+                    # Try multiple possible keys for the message body
+                    raw_email = None
+                    for key in [b'BODY[]', 'BODY[]', b'RFC822', 'RFC822', b'BODY.PEEK[]']:
+                        if key in data:
+                            raw_email = data[key]
+                            break
+
+                    if raw_email is None:
+                        continue
+
+                    msg = email.message_from_bytes(raw_email)
+
+                    # Extract body_text
+                    body_text = ""
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            content_type = part.get_content_type()
+                            if content_type == "text/plain":
+                                try:
+                                    body_text = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                                    break
+                                except Exception as _e:
+                                    pass
+                    else:
+                        try:
+                            body_text = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
+                        except Exception as _e:
+                            pass
 
                     result.append({
                         "id": str(msg_id),
@@ -423,8 +456,9 @@ async def search_messages(
                         "from": _decode_mime_header(msg.get('From', '')),
                         "to": _decode_mime_header(msg.get('To', '')),
                         "date": msg.get('Date', ''),
-                        "flags": [flag.decode() if isinstance(flag, bytes) else flag for flag in data[b'FLAGS']],
-                        "folder": folder
+                        "flags": [flag.decode() if isinstance(flag, bytes) else flag for flag in data.get(b'FLAGS', data.get('FLAGS', []))],
+                        "folder": folder,
+                        "body_text": body_text
                     })
                 except Exception as _e:
                     continue
@@ -438,7 +472,62 @@ async def search_messages(
 
             # Fetch more messages to search through locally
             fetch_limit = max(limit * 10, 200)
-            all_messages = await list_messages(context, folder, fetch_limit, unread_only=False)
+
+            # Get all message IDs
+            all_msg_ids = client.search(['ALL'])
+            message_ids = list(all_msg_ids)[-fetch_limit:] if len(all_msg_ids) > fetch_limit else list(all_msg_ids)
+            message_ids.reverse()
+
+            if not message_ids:
+                return []
+
+            # Fetch full messages with body
+            response = client.fetch(message_ids, [b'FLAGS', b'BODY.PEEK[]'])
+
+            all_messages = []
+            for msg_id, data in response.items():
+                try:
+                    # Try multiple possible keys for the message body
+                    raw_email = None
+                    for key in [b'BODY[]', 'BODY[]', b'RFC822', 'RFC822', b'BODY.PEEK[]']:
+                        if key in data:
+                            raw_email = data[key]
+                            break
+
+                    if raw_email is None:
+                        continue
+
+                    msg = email.message_from_bytes(raw_email)
+
+                    # Extract body_text
+                    body_text = ""
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            content_type = part.get_content_type()
+                            if content_type == "text/plain":
+                                try:
+                                    body_text = part.get_payload(decode=True).decode('utf-8', errors='ignore')
+                                    break
+                                except Exception as _e:
+                                    pass
+                    else:
+                        try:
+                            body_text = msg.get_payload(decode=True).decode('utf-8', errors='ignore')
+                        except Exception as _e:
+                            pass
+
+                    all_messages.append({
+                        "id": str(msg_id),
+                        "subject": _decode_mime_header(msg.get('Subject', '')),
+                        "from": _decode_mime_header(msg.get('From', '')),
+                        "to": _decode_mime_header(msg.get('To', '')),
+                        "date": msg.get('Date', ''),
+                        "flags": [flag.decode() if isinstance(flag, bytes) else flag for flag in data.get(b'FLAGS', data.get('FLAGS', []))],
+                        "folder": folder,
+                        "body_text": body_text
+                    })
+                except Exception as _e:
+                    continue
 
             # Filter messages locally (supports any Unicode)
             query_lower = query.lower()
