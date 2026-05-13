@@ -277,7 +277,8 @@ async def create_event(
     description: Optional[str] = None,
     location: Optional[str] = None,
     attendees: Optional[List[str]] = None,
-    calendar_id: Optional[str] = None
+    calendar_id: Optional[str] = None,
+    reminders: Optional[List[int]] = None
 ) -> Dict[str, Any]:
     """
     Create a new calendar event.
@@ -290,6 +291,7 @@ async def create_event(
         location: Event location (optional)
         attendees: List of attendee email addresses to invite (optional)
         calendar_id: Target calendar URL/ID (optional, defaults to first non-reminder calendar)
+        reminders: List of reminder offsets in minutes before the event (optional, e.g. [60] for 1 hour before)
 
     Returns:
         Created event details
@@ -348,6 +350,16 @@ SEQUENCE:0
         loc_escaped = location.replace('\\', '\\\\').replace(',', '\\,').replace(';', '\\;')
         ical_data += f"LOCATION:{loc_escaped}\n"
 
+    # Add VALARM blocks for reminders (minutes before event)
+    if reminders:
+        for minutes in reminders:
+            ical_data += f"""BEGIN:VALARM
+TRIGGER:-PT{minutes}M
+ACTION:DISPLAY
+DESCRIPTION:Reminder
+END:VALARM
+"""
+
     # Add attendees (meeting invitations)
     if attendees:
         for attendee_email in attendees:
@@ -392,6 +404,7 @@ SEQUENCE:0
         "description": description or "",
         "location": location or "",
         "attendees": attendees or [],
+        "reminders": reminders or [],
         "calendar": calendar.name,
         "url": str(event.url)
     }

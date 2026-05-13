@@ -74,7 +74,8 @@ async def calendar_create_event(
     description: str = None,
     location: str = None,
     attendees: list[str] = None,
-    calendar_id: str = None
+    calendar_id: str = None,
+    reminders: list[int] = None
 ) -> dict:
     """
     Create a new calendar event.
@@ -87,9 +88,10 @@ async def calendar_create_event(
         location: Event location (optional)
         attendees: List of attendee email addresses to invite (optional)
         calendar_id: Target calendar URL/ID (optional)
+        reminders: List of reminder offsets in minutes before the event (optional, e.g. [60] for 1 hour before)
     """
     try:
-        return await calendar.create_event(context, summary, start, end, description, location, attendees, calendar_id)
+        return await calendar.create_event(context, summary, start, end, description, location, attendees, calendar_id, reminders)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:
