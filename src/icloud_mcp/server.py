@@ -75,23 +75,29 @@ async def calendar_create_event(
     location: str = None,
     attendees: list[str] = None,
     calendar_id: str = None,
-    reminders: list[int] = None
+    reminders: list[int] = None,
+    all_day_alarm_time: str = None
 ) -> dict:
     """
     Create a new calendar event.
 
     Args:
         summary: Event title
-        start: Start datetime in ISO format (e.g., "2025-11-15T10:00:00")
-        end: End datetime in ISO format (e.g., "2025-11-15T11:00:00")
+        start: Start datetime in ISO format. Use "YYYY-MM-DD" (date only) for all-day events,
+               or "YYYY-MM-DDTHH:MM:SS" for timed events.
+        end: End datetime in ISO format (same rules as start). For all-day events the end date is
+             exclusive per iCalendar spec, so pass the day *after* the last day.
         description: Event description (optional)
         location: Event location (optional)
         attendees: List of attendee email addresses to invite (optional)
         calendar_id: Target calendar URL/ID (optional)
-        reminders: List of reminder offsets in minutes before the event (optional, e.g. [60] for 1 hour before)
+        reminders: List of reminder offsets in minutes before the event (optional, e.g. [60] for
+                   1 hour before). Use all_day_alarm_time for all-day events instead.
+        all_day_alarm_time: For all-day events — alarm time in "HH:MM" format on the day of the
+                            event (e.g. "09:00" for 9 AM). Generates TRIGGER;RELATED=START:PT9H.
     """
     try:
-        return await calendar.create_event(context, summary, start, end, description, location, attendees, calendar_id, reminders)
+        return await calendar.create_event(context, summary, start, end, description, location, attendees, calendar_id, reminders, all_day_alarm_time)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:
