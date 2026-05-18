@@ -2,7 +2,7 @@
 
 import caldav
 import smtplib
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import List, Dict, Any, Optional
 from urllib.parse import urlparse
 from email.mime.multipart import MIMEMultipart
@@ -277,19 +277,27 @@ async def create_event(
     description: Optional[str] = None,
     location: Optional[str] = None,
     attendees: Optional[List[str]] = None,
-    calendar_id: Optional[str] = None
+    calendar_id: Optional[str] = None,
+    reminders: Optional[List[int]] = None,
+    all_day_alarm_time: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Create a new calendar event.
 
     Args:
         summary: Event title
-        start: Start datetime in ISO format
-        end: End datetime in ISO format
+        start: Start datetime in ISO format. Pass a date-only value (YYYY-MM-DD) to create an
+               all-day event; pass a full datetime (YYYY-MM-DDTHH:MM:SS) for timed events.
+        end: End datetime in ISO format (same rules as start).
         description: Event description (optional)
         location: Event location (optional)
         attendees: List of attendee email addresses to invite (optional)
         calendar_id: Target calendar URL/ID (optional, defaults to first non-reminder calendar)
+        reminders: List of reminder offsets in minutes before the event (optional, e.g. [60] for
+                   1 hour before). Not meaningful for all-day events; use all_day_alarm_time instead.
+        all_day_alarm_time: For all-day events only — time-of-day for the alarm in "HH:MM" format
+                            (e.g. "09:00" for 9 AM on the day of the event). Generates a positive
+                            TRIGGER;RELATED=START offset as required by the iCalendar spec.
 
     Returns:
         Created event details
@@ -318,12 +326,24 @@ async def create_event(
         calendar = event_calendars[0]
 
     # Build iCalendar data with proper formatting for iCloud
-    start_dt = datetime.fromisoformat(start)
-    end_dt = datetime.fromisoformat(end)
     now = datetime.now()
 
     # Generate UID without dots (iCloud compatible)
     uid = f"{int(now.timestamp())}{now.microsecond}@icloud-mcp"
+
+    # Detect all-day event: date-only input has no 'T' and is exactly 10 chars (YYYY-MM-DD)
+    is_all_day = len(start) == 10 and 'T' not in start
+
+    if is_all_day:
+        start_date_obj = date.fromisoformat(start)
+        end_date_obj = date.fromisoformat(end)
+        dtstart_line = f"DTSTART;VALUE=DATE:{start_date_obj.strftime('%Y%m%d')}"
+        dtend_line = f"DTEND;VALUE=DATE:{end_date_obj.strftime('%Y%m%d')}"
+    else:
+        start_dt = datetime.fromisoformat(start)
+        end_dt = datetime.fromisoformat(end)
+        dtstart_line = f"DTSTART:{start_dt.strftime('%Y%m%dT%H%M%S')}"
+        dtend_line = f"DTEND:{end_dt.strftime('%Y%m%dT%H%M%S')}"
 
     # Build proper iCalendar format (iCloud is very strict about formatting)
     ical_data = f"""BEGIN:VCALENDAR
@@ -333,8 +353,8 @@ CALSCALE:GREGORIAN
 BEGIN:VEVENT
 UID:{uid}
 DTSTAMP:{now.strftime('%Y%m%dT%H%M%SZ')}
-DTSTART:{start_dt.strftime('%Y%m%dT%H%M%S')}
-DTEND:{end_dt.strftime('%Y%m%dT%H%M%S')}
+{dtstart_line}
+{dtend_line}
 SUMMARY:{summary}
 STATUS:CONFIRMED
 SEQUENCE:0
@@ -347,6 +367,28 @@ SEQUENCE:0
     if location:
         loc_escaped = location.replace('\\', '\\\\').replace(',', '\\,').replace(';', '\\;')
         ical_data += f"LOCATION:{loc_escaped}\n"
+
+    # Add VALARM blocks for reminders (minutes before event — timed events)
+    if reminders:
+        for minutes in reminders:
+            ical_data += f"""BEGIN:VALARM
+TRIGGER:-PT{minutes}M
+ACTION:DISPLAY
+DESCRIPTION:Reminder
+END:VALARM
+"""
+
+    # For all-day events, support a specific time-of-day alarm via a positive TRIGGER offset.
+    # iCalendar spec requires TRIGGER;RELATED=START:PT{offset} for offsets after DTSTART midnight.
+    if is_all_day and all_day_alarm_time:
+        h, m = map(int, all_day_alarm_time.split(':'))
+        trigger_offset = f"PT{h}H" if m == 0 else f"PT{h}H{m}M"
+        ical_data += f"""BEGIN:VALARM
+TRIGGER;RELATED=START:{trigger_offset}
+ACTION:DISPLAY
+DESCRIPTION:Reminder
+END:VALARM
+"""
 
     # Add attendees (meeting invitations)
     if attendees:
@@ -392,6 +434,7 @@ SEQUENCE:0
         "description": description or "",
         "location": location or "",
         "attendees": attendees or [],
+        "reminders": reminders or [],
         "calendar": calendar.name,
         "url": str(event.url)
     }

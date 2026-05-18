@@ -1,6 +1,6 @@
 """FastMCP server for iCloud integration."""
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 from . import calendar, contacts, email as email_module
 from .auth import AuthenticationError
 
@@ -28,7 +28,7 @@ async def health_check(request):
 # ============================================================================
 
 @mcp.tool()
-async def calendar_list_calendars(context) -> list | dict:
+async def calendar_list_calendars(context: Context) -> list | dict:
     """
     List all available calendars.
 
@@ -44,7 +44,7 @@ async def calendar_list_calendars(context) -> list | dict:
 
 @mcp.tool()
 async def calendar_list_events(
-    context,
+    context: Context,
     calendar_id: str = None,
     start_date: str = None,
     end_date: str = None
@@ -67,29 +67,37 @@ async def calendar_list_events(
 
 @mcp.tool()
 async def calendar_create_event(
-    context,
+    context: Context,
     summary: str,
     start: str,
     end: str,
     description: str = None,
     location: str = None,
     attendees: list[str] = None,
-    calendar_id: str = None
+    calendar_id: str = None,
+    reminders: list[int] = None,
+    all_day_alarm_time: str = None
 ) -> dict:
     """
     Create a new calendar event.
 
     Args:
         summary: Event title
-        start: Start datetime in ISO format (e.g., "2025-11-15T10:00:00")
-        end: End datetime in ISO format (e.g., "2025-11-15T11:00:00")
+        start: Start datetime in ISO format. Use "YYYY-MM-DD" (date only) for all-day events,
+               or "YYYY-MM-DDTHH:MM:SS" for timed events.
+        end: End datetime in ISO format (same rules as start). For all-day events the end date is
+             exclusive per iCalendar spec, so pass the day *after* the last day.
         description: Event description (optional)
         location: Event location (optional)
         attendees: List of attendee email addresses to invite (optional)
         calendar_id: Target calendar URL/ID (optional)
+        reminders: List of reminder offsets in minutes before the event (optional, e.g. [60] for
+                   1 hour before). Use all_day_alarm_time for all-day events instead.
+        all_day_alarm_time: For all-day events — alarm time in "HH:MM" format on the day of the
+                            event (e.g. "09:00" for 9 AM). Generates TRIGGER;RELATED=START:PT9H.
     """
     try:
-        return await calendar.create_event(context, summary, start, end, description, location, attendees, calendar_id)
+        return await calendar.create_event(context, summary, start, end, description, location, attendees, calendar_id, reminders, all_day_alarm_time)
     except AuthenticationError as e:
         return {"error": str(e), "status": 401}
     except Exception as e:
@@ -98,7 +106,7 @@ async def calendar_create_event(
 
 @mcp.tool()
 async def calendar_update_event(
-    context,
+    context: Context,
     event_id: str,
     summary: str = None,
     start: str = None,
@@ -128,7 +136,7 @@ async def calendar_update_event(
 
 
 @mcp.tool()
-async def calendar_delete_event(context, event_id: str) -> dict:
+async def calendar_delete_event(context: Context, event_id: str) -> dict:
     """
     Delete a calendar event.
 
@@ -145,7 +153,7 @@ async def calendar_delete_event(context, event_id: str) -> dict:
 
 @mcp.tool()
 async def calendar_search_events(
-    context,
+    context: Context,
     query: str,
     calendar_id: str = None,
     start_date: str = None,
@@ -173,7 +181,7 @@ async def calendar_search_events(
 # ============================================================================
 
 @mcp.tool()
-async def contacts_list(context, limit: int = None) -> list | dict:
+async def contacts_list(context: Context, limit: int = None) -> list | dict:
     """
     List all contacts.
 
@@ -189,7 +197,7 @@ async def contacts_list(context, limit: int = None) -> list | dict:
 
 
 @mcp.tool()
-async def contacts_get(context, contact_id: str) -> dict:
+async def contacts_get(context: Context, contact_id: str) -> dict:
     """
     Get a specific contact by ID.
 
@@ -206,7 +214,7 @@ async def contacts_get(context, contact_id: str) -> dict:
 
 @mcp.tool()
 async def contacts_create(
-    context,
+    context: Context,
     name: str,
     phones: list[str] = None,
     emails: list[str] = None,
@@ -235,7 +243,7 @@ async def contacts_create(
 
 @mcp.tool()
 async def contacts_update(
-    context,
+    context: Context,
     contact_id: str,
     name: str = None,
     phones: list[str] = None,
@@ -265,7 +273,7 @@ async def contacts_update(
 
 
 @mcp.tool()
-async def contacts_delete(context, contact_id: str) -> dict:
+async def contacts_delete(context: Context, contact_id: str) -> dict:
     """
     Delete a contact.
 
@@ -281,7 +289,7 @@ async def contacts_delete(context, contact_id: str) -> dict:
 
 
 @mcp.tool()
-async def contacts_search(context, query: str) -> list | dict:
+async def contacts_search(context: Context, query: str) -> list | dict:
     """
     Search for contacts by text query.
 
@@ -301,7 +309,7 @@ async def contacts_search(context, query: str) -> list | dict:
 # ============================================================================
 
 @mcp.tool()
-async def email_list_folders(context) -> list | dict:
+async def email_list_folders(context: Context) -> list | dict:
     """
     List all email folders/mailboxes.
 
@@ -317,7 +325,7 @@ async def email_list_folders(context) -> list | dict:
 
 @mcp.tool()
 async def email_list_messages(
-    context,
+    context: Context,
     folder: str = "INBOX",
     limit: int = 50,
     unread_only: bool = False
@@ -342,7 +350,7 @@ async def email_list_messages(
 
 @mcp.tool()
 async def email_get_message(
-    context,
+    context: Context,
     message_id: str,
     folder: str = "INBOX",
     include_body: bool = True,
@@ -367,7 +375,7 @@ async def email_get_message(
 
 @mcp.tool()
 async def email_get_messages(
-    context,
+    context: Context,
     message_ids: list[str],
     folder: str = "INBOX",
     include_body: bool = True,
@@ -392,7 +400,7 @@ async def email_get_messages(
 
 @mcp.tool()
 async def email_search(
-    context,
+    context: Context,
     query: str,
     folder: str = "INBOX",
     limit: int = 50
@@ -415,7 +423,7 @@ async def email_search(
 
 @mcp.tool()
 async def email_send(
-    context,
+    context: Context,
     to: str,
     subject: str,
     body: str,
@@ -444,7 +452,7 @@ async def email_send(
 
 @mcp.tool()
 async def email_move(
-    context,
+    context: Context,
     message_id: str,
     from_folder: str,
     to_folder: str
@@ -467,7 +475,7 @@ async def email_move(
 
 @mcp.tool()
 async def email_delete(
-    context,
+    context: Context,
     message_id: str,
     folder: str = "INBOX",
     permanent: bool = False
@@ -490,7 +498,7 @@ async def email_delete(
 
 @mcp.tool()
 async def email_mark_read(
-    context,
+    context: Context,
     message_id: str,
     folder: str = "INBOX"
 ) -> dict:
@@ -511,7 +519,7 @@ async def email_mark_read(
 
 @mcp.tool()
 async def email_mark_unread(
-    context,
+    context: Context,
     message_id: str,
     folder: str = "INBOX"
 ) -> dict:
