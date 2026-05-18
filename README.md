@@ -15,7 +15,7 @@ MCP (Model Context Protocol) server for iCloud integration, providing tools for 
 ### Calendar Tools (CalDAV)
 - `calendar_list_calendars` - List all calendars
 - `calendar_list_events` - List events with date filtering
-- `calendar_create_event` - Create new event
+- `calendar_create_event` - Create new event (timed or all-day, with optional reminders and attendee invitations)
 - `calendar_update_event` - Update existing event
 - `calendar_delete_event` - Delete event
 - `calendar_search_events` - Search events by text
