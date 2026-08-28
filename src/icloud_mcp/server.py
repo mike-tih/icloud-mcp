@@ -6,7 +6,9 @@ import sys
 from fastmcp import Context, FastMCP
 from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 from mcp.types import ToolAnnotations
-from . import calendar, contacts, email as email_module
+
+from . import calendar, contacts
+from . import email as email_module
 from .auth import AuthenticationError
 from .config import config
 
@@ -68,21 +70,44 @@ async def calendar_list_calendars(context: Context) -> list | dict:
         return {"error": "Internal error", "status": 500}
 
 
+MAX_LIST_RANGE_DAYS = 92
+
+
+def validate_date_range(start_date: str, end_date: str) -> str | None:
+    """Return an error message for a bad YYYY-MM-DD range, None when it is fine."""
+    from datetime import date
+
+    try:
+        start = date.fromisoformat(str(start_date))
+        end = date.fromisoformat(str(end_date))
+    except (TypeError, ValueError):
+        return "start_date and end_date are required in ISO format YYYY-MM-DD"
+    if end < start:
+        return "end_date must not be before start_date"
+    if (end - start).days > MAX_LIST_RANGE_DAYS:
+        return f"date range too long: at most {MAX_LIST_RANGE_DAYS} days between start_date and end_date"
+    return None
+
+
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=True))
 async def calendar_list_events(
     context: Context,
-    calendar_id: str | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None
+    start_date: str,
+    end_date: str,
+    calendar_id: str | None = None
 ) -> list | dict:
     """
-    List calendar events with optional filtering.
+    List calendar events in a date range. Both dates are REQUIRED: without a range the
+    whole calendar would be returned. Keep the range short (one day to a few weeks, max 92 days).
 
     Args:
-        calendar_id: Specific calendar URL/ID (optional)
-        start_date: Start date in ISO format YYYY-MM-DD (optional)
-        end_date: End date in ISO format YYYY-MM-DD (optional)
+        start_date: Range start, ISO date YYYY-MM-DD (required, inclusive)
+        end_date: Range end, ISO date YYYY-MM-DD (required, inclusive, at most 92 days after start_date)
+        calendar_id: Specific calendar URL/ID (optional; default: all calendars)
     """
+    range_error = validate_date_range(start_date, end_date)
+    if range_error:
+        return {"error": range_error, "status": 400}
     try:
         return await calendar.list_events(context, calendar_id, start_date, end_date)
     except AuthenticationError as e:
