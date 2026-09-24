@@ -20,7 +20,7 @@ Runs in two modes with the same code:
 | `calendar_list_calendars` | Calendars with IDs; Reminders lists are flagged `read_only` |
 | `calendar_list_events` | Events in a date range, recurring series expanded per occurrence, sorted by start |
 | `calendar_search_events` | Text search over summary/description/location |
-| `calendar_create_event` | Create an event: timezone, all-day, `rrule`, `reminders` (minutes before start), attendees (invitations sent by email) |
+| `calendar_create_event` | Create an event: timezone, all-day, `rrule`, `reminders` (minutes before start or `"09:00"` time of day), attendees (invitations sent by email) |
 | `calendar_update_event` | Partial update; change timezone/recurrence/alerts; re-sends invitations when attendees change |
 | `calendar_delete_event` | Delete and email cancellations to attendees |
 | `contacts_list` / `contacts_search` / `contacts_get` | Read contacts (name, phones, emails, addresses, organization, title, notes) |
@@ -47,6 +47,7 @@ Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`) so client
 - **Rich text** that users paste into event notes/locations or contact notes comes back from iCloud as HTML; it is converted to Markdown so links and lists survive (`ICLOUD_HTML_MODE=markdown`, default), rendered to plain text (`text`) or passed through (`raw`).
 - **Tool groups** can be switched off per instance with `ICLOUD_ENABLED_CATEGORIES=calendar,contacts,email` (e.g. a read-only mail agent gets `email` only).
 - **Only iCloud hosts** are ever contacted with the account's credentials: calendar, event and contact URLs on any other host are rejected, and mail headers are validated against injection.
+- **Outbound recipients** can be restricted with `EMAIL_SEND_ALLOWLIST=@mycompany.com,partner@example.com`; it applies to `email_send`, `email_save_draft` and calendar invitations, so a prompt-injected agent cannot mail data to arbitrary addresses.
 
 ## Requirements
 
@@ -158,6 +159,7 @@ All settings are environment variables (a `.env` file next to the checkout is lo
 | `DEFAULT_TIMEZONE` | machine zone or `UTC` | Timezone for naive event times; set explicitly on servers |
 | `EMAIL_BODY_MAX_CHARS` | `20000` | Body truncation |
 | `EMAIL_MAX_ATTACHMENT_BYTES` | `20971520` | Outgoing attachment budget |
+| `EMAIL_SEND_ALLOWLIST` | – | Allowed outbound addresses/domains (send, drafts, invitations) |
 | `ICLOUD_MCP_LOCAL_FILES` | stdio: on, HTTP: off | Allow reading/writing attachments on the server's disk |
 | `ICLOUD_MCP_LOCAL_FILES_ROOT` | – | Confine those files to a directory |
 | `MCP_AUTH_TOKEN` | – | Shared secret required on HTTP requests |

@@ -29,7 +29,7 @@ Conventions:
 - Recurring events are expanded by calendar_list_events: each occurrence is a separate entry sharing the series id; update/delete affect the whole series.
 - Email bodies are converted to readable text and truncated to {config.EMAIL_BODY_MAX_CHARS} characters; use email_get_message with full_html=true for the raw HTML.
 - Sending mail, creating/updating/deleting events and contacts are irreversible: confirm the details with the user first when in doubt. Use email_save_draft when the user wants to review before sending.
-- Enabled tool groups: {", ".join(sorted(config.ENABLED_CATEGORIES))}.
+- Enabled tool groups: {", ".join(sorted(config.ENABLED_CATEGORIES))}.{" Outbound recipients are restricted by EMAIL_SEND_ALLOWLIST." if config.EMAIL_SEND_ALLOWLIST else ""}
 """
 
 mcp = FastMCP(
@@ -125,8 +125,8 @@ Rrule = Annotated[
     ),
 ]
 Reminders = Annotated[
-    list[int] | None,
-    Field(description="Alerts as minutes before the event start, e.g. [60, 10]. 0 = at start; a negative value fires after the start (e.g. -540 = 09:00 on the day of an all-day event)."),
+    list[int | str] | None,
+    Field(description="Alerts: minutes before the event start (e.g. [60, 10]; 0 = at start, negative = after start) or a time of day on the event's date as 'HH:MM' (e.g. ['09:00'] for an all-day event)."),
 ]
 Attendees = Annotated[list[str] | None, Field(description="Attendee email addresses. Each receives an iTIP invitation by email.")]
 
@@ -202,7 +202,7 @@ def calendar_update_event(
     attendees: Annotated[list[str] | None, Field(description="New attendee list; replaces the existing one and sends updated invitations.")] = None,
     timezone: Annotated[str | None, Field(description="IANA timezone for the new start/end. Omit to keep the event's current timezone.")] = None,
     rrule: Annotated[str | None, Field(description="New recurrence rule for the whole series (e.g. 'FREQ=WEEKLY;BYDAY=TU'). Pass '' to make the event non-recurring.")] = None,
-    reminders: Annotated[list[int] | None, Field(description="New alerts as minutes before start (replaces existing alerts; [] removes all).")] = None,
+    reminders: Annotated[list[int | str] | None, Field(description="New alerts as minutes before start or 'HH:MM' (replaces existing alerts; [] removes all).")] = None,
 ) -> dict[str, Any]:
     """Update fields of an existing event. Only provided fields change; recurring series are updated as a whole."""
     return _run(
