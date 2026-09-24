@@ -44,7 +44,7 @@ Every tool carries MCP annotations (`readOnlyHint`, `destructiveHint`) so client
 - **Recurring events**: `calendar_list_events` returns one entry per occurrence; update/delete apply to the whole series.
 - **Email bodies** are converted from HTML to readable text and truncated to `EMAIL_BODY_MAX_CHARS` (20 000) so newsletters do not flood the model context. `full_html=true` returns the raw HTML too.
 - **Attachments on disk** (`save_dir`, `attachment_paths`) are enabled by default in stdio mode and disabled in HTTP mode. Override with `ICLOUD_MCP_LOCAL_FILES` and restrict to a folder with `ICLOUD_MCP_LOCAL_FILES_ROOT`.
-- **Rich text** that users paste into event notes/locations or contact notes comes back from iCloud as HTML; it is rendered to readable text (`ICLOUD_HTML_MODE=text`, default) or passed through (`raw`).
+- **Rich text** that users paste into event notes/locations or contact notes comes back from iCloud as HTML; it is converted to Markdown so links and lists survive (`ICLOUD_HTML_MODE=markdown`, default), rendered to plain text (`text`) or passed through (`raw`).
 - **Tool groups** can be switched off per instance with `ICLOUD_ENABLED_CATEGORIES=calendar,contacts,email` (e.g. a read-only mail agent gets `email` only).
 - **Only iCloud hosts** are ever contacted with the account's credentials: calendar, event and contact URLs on any other host are rejected, and mail headers are validated against injection.
 
@@ -163,7 +163,7 @@ All settings are environment variables (a `.env` file next to the checkout is lo
 | `MCP_AUTH_TOKEN` | – | Shared secret required on HTTP requests |
 | `ICLOUD_MCP_ALLOW_ENV_CREDENTIALS` | true with token, else false | Serve the env account over HTTP |
 | `ICLOUD_ENABLED_CATEGORIES` | `calendar,contacts,email` | Tool groups to expose |
-| `ICLOUD_HTML_MODE` | `text` | Rich text in event/contact fields: `text` or `raw` |
+| `ICLOUD_HTML_MODE` | `markdown` | Rich text in event/contact fields: `markdown`, `text` or `raw` |
 | `MCP_TRANSPORT`, `PORT`, `MCP_SERVER_HOST`, `MCP_SERVER_PATH` | stdio, `8000`, `0.0.0.0`, `/mcp` | HTTP transport |
 | `LOG_LEVEL` | `INFO` | Logging (always to stderr, stdout is reserved for stdio) |
 

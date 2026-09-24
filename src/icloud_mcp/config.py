@@ -87,8 +87,9 @@ class Config:
     ENABLED_CATEGORIES: frozenset[str] = _parse_categories(os.getenv("ICLOUD_ENABLED_CATEGORIES"))
 
     # How rich text stored in iCloud fields (event notes/location, contact notes)
-    # is returned: "text" renders HTML to readable text, "raw" leaves it untouched.
-    HTML_MODE: str = os.getenv("ICLOUD_HTML_MODE", "text").strip().lower()
+    # is returned: "markdown" keeps links/emphasis/lists, "text" renders to plain
+    # text, "raw" leaves it untouched.
+    HTML_MODE: str = os.getenv("ICLOUD_HTML_MODE", "markdown").strip().lower()
 
     # HTTP hardening. MCP_AUTH_TOKEN, when set, is required on every MCP request as
     # ``Authorization: Bearer <token>`` or ``X-MCP-Token: <token>``. Environment

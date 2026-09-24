@@ -71,6 +71,9 @@ def test_clean_rich_text_modes(monkeypatch):
     assert mail_utils.clean_rich_text("plain, text") == "plain, text"
     monkeypatch.setattr(config, "HTML_MODE", "raw")
     assert mail_utils.clean_rich_text(html) == html
+    monkeypatch.setattr(config, "HTML_MODE", "markdown")
+    rendered = mail_utils.clean_rich_text('See <a href="https://x.test/map">map</a><br><b>LA</b><ul><li>one</li></ul>')
+    assert "[map](https://x.test/map)" in rendered and "**LA**" in rendered and "- one" in rendered
 
 
 def test_parse_categories():

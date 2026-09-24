@@ -506,18 +506,23 @@ def split_addresses(value: str | None) -> list[str]:
 def clean_rich_text(value: Any) -> str:
     """Normalise rich text stored in iCloud fields (event notes/location, contact notes).
 
-    iCloud passes through HTML that users paste into Calendar/Contacts. With
-    ICLOUD_HTML_MODE=text (default) such values are rendered to readable text;
-    with "raw" they are returned untouched.
+    iCloud passes through HTML that users paste into Calendar/Contacts. ICLOUD_HTML_MODE:
+    ``markdown`` (default) keeps links/emphasis/lists as Markdown, ``text`` renders to plain
+    text via inscriptis, ``raw`` returns the value untouched.
     """
     if value is None:
         return ""
     text = str(value)
-    if config.HTML_MODE == "raw" or not _TAG_RE.search(text):
+    mode = config.HTML_MODE
+    if mode == "raw" or not _TAG_RE.search(text):
         return text
-    try:
-        from inscriptis import get_text
+    if mode in ("text", "strip"):
+        try:
+            from inscriptis import get_text
 
-        return get_text(text).strip()
-    except Exception:
-        return text
+            return get_text(text).strip()
+        except Exception:
+            return text
+    from .html_render import render
+
+    return render(text, mode="markdown") or ""
