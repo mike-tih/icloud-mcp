@@ -198,6 +198,7 @@ src/icloud_mcp/
 ├── contacts.py    # CardDAV operations
 ├── mail.py        # IMAP/SMTP operations
 ├── mail_utils.py  # MIME parsing, HTML→text, attachments, special folders, header validation
+├── html_render.py # HTML→Markdown for rich text in event/contact fields
 └── urls.py        # iCloud host allow-list for calendar/contact URLs
 ```
 
