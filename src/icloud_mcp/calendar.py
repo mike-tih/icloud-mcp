@@ -8,6 +8,7 @@ RRULE support, IANA timezone handling and iTIP invitations over SMTP.
 """
 
 import logging
+import re
 import smtplib
 from datetime import UTC, date, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
@@ -23,7 +24,7 @@ from dateutil.rrule import rrulestr
 
 from .auth import require_auth
 from .config import config
-from .mail_utils import clean_rich_text
+from .mail_utils import check_recipients_allowed, clean_rich_text, parse_recipients
 from .urls import ensure_icloud_url
 
 logger = logging.getLogger(__name__)
@@ -207,6 +208,58 @@ def _alarm_minutes(vevent: Any) -> list[int]:
                 continue
             result.append(int(-value.total_seconds() // 60))
     return result
+
+
+_TIME_OF_DAY_RE = re.compile(r"^\s*(\d{1,2}):(\d{2})\s*$")
+
+
+def _reminder_minutes(reminders: list[Any] | None, start: date | datetime | None) -> list[int]:
+    """Normalise reminder specs to minutes before start.
+
+    An int is minutes before start (negative = after start). A "HH:MM" string is a
+    time of day on the event's start date, which is what people mean for all-day
+    events ("remind me at 09:00"); for timed events it is converted relative to the
+    start time.
+    """
+    result: list[int] = []
+    for item in reminders or []:
+        if isinstance(item, bool):
+            raise ValueError(f"Invalid reminder {item!r}: expected minutes or 'HH:MM'")
+        if isinstance(item, int):
+            result.append(item)
+            continue
+        if isinstance(item, float) and item.is_integer():
+            result.append(int(item))
+            continue
+        text = str(item).strip()
+        match = _TIME_OF_DAY_RE.match(text)
+        if match:
+            hours, minutes = int(match.group(1)), int(match.group(2))
+            if hours > 23 or minutes > 59:
+                raise ValueError(f"Invalid reminder time {text!r}")
+            of_day = hours * 60 + minutes
+            if isinstance(start, datetime):
+                result.append(start.hour * 60 + start.minute - of_day)
+            else:
+                result.append(-of_day)
+            continue
+        if text.lstrip("-").isdigit():
+            result.append(int(text))
+            continue
+        raise ValueError(f"Invalid reminder {item!r}: expected minutes before start or 'HH:MM'")
+    return result
+
+
+def _validate_attendees(attendees: list[str] | None) -> list[str]:
+    """Normalise attendee addresses and enforce EMAIL_SEND_ALLOWLIST."""
+    if not attendees:
+        return []
+    addresses = []
+    for item in attendees:
+        for parsed in parse_recipients(item, "attendees"):
+            addresses.append(parsed.rsplit("<", 1)[-1].rstrip(">") if "<" in parsed else parsed)
+    check_recipients_allowed(addresses)
+    return addresses
 
 
 def _add_alarm(vevent: Any, minutes_before: int) -> None:
@@ -509,9 +562,10 @@ def create_event(
     calendar_id: str | None = None,
     timezone: str | None = None,
     rrule: str | None = None,
-    reminders: list[int] | None = None,
+    reminders: list[Any] | None = None,
 ) -> dict[str, Any]:
     email, password = require_auth()
+    attendees = _validate_attendees(attendees)
     client = _get_caldav_client(email, password)
     calendar = _resolve_calendar(client, calendar_id, email, password)
 
@@ -574,7 +628,8 @@ def create_event(
                 f"ATTENDEE;CN={attendee_email};CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;"
                 f"PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:{attendee_email}"
             )
-    for minutes in reminders or []:
+    alarm_minutes = _reminder_minutes(reminders, start_value)
+    for minutes in alarm_minutes:
         lines += _alarm_lines(minutes)
     lines += ["END:VEVENT", "END:VCALENDAR"]
     ical_data = "\n".join(lines)
@@ -602,7 +657,7 @@ def create_event(
         "location": location or "",
         "attendees": attendees or [],
         "rrule": rrule_line[len("RRULE:"):] if rrule_line else "",
-        "reminders": [int(m) for m in reminders or []],
+        "reminders": alarm_minutes,
         "calendar": calendar.name,
     }
     if failed:
@@ -662,9 +717,11 @@ def update_event(
     attendees: list[str] | None = None,
     timezone: str | None = None,
     rrule: str | None = None,
-    reminders: list[int] | None = None,
+    reminders: list[Any] | None = None,
 ) -> dict[str, Any]:
     email, password = require_auth()
+    if attendees is not None:
+        attendees = _validate_attendees(attendees)
     client, event = _load_event(event_id, email, password)
     vevent = event.vobject_instance.vevent
 
@@ -729,9 +786,11 @@ def update_event(
             org.params["CN"] = [email]
 
     if reminders is not None:
+        start_prop = getattr(vevent, "dtstart", None)
+        alarm_minutes = _reminder_minutes(reminders, start_prop.value if start_prop is not None else None)
         for alarm in list(getattr(vevent, "valarm_list", []) or []):
             vevent.remove(alarm)
-        for minutes in reminders:
+        for minutes in alarm_minutes:
             _add_alarm(vevent, minutes)
 
     # Bump SEQUENCE so clients treat iTIP updates as newer than the original.

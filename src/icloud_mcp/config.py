@@ -102,6 +102,11 @@ class Config:
 
     # Size limits
     EMAIL_BODY_MAX_CHARS: int = int(os.getenv("EMAIL_BODY_MAX_CHARS", "20000"))
+    # Outbound recipients (email_send, email_save_draft, calendar invitations) must match
+    # one of these entries when set: full addresses or domains ("@example.com").
+    EMAIL_SEND_ALLOWLIST: frozenset[str] = frozenset(
+        x.strip().lower() for x in os.getenv("EMAIL_SEND_ALLOWLIST", "").split(",") if x.strip()
+    )
     EMAIL_MAX_ATTACHMENT_BYTES: int = int(
         os.getenv("EMAIL_MAX_ATTACHMENT_BYTES", str(20 * 1024 * 1024))
     )

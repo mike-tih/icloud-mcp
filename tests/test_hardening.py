@@ -146,3 +146,21 @@ def test_redact_secrets(monkeypatch):
 
     monkeypatch.setattr(auth, "get_credentials", lambda: ("a@icloud.com", "hunter2"))
     assert auth.redact_secrets("login failed for hunter2 at host") == "login failed for *** at host"
+
+
+def test_send_allowlist(monkeypatch):
+    monkeypatch.setattr(config, "EMAIL_SEND_ALLOWLIST", frozenset({"@ok.test", "vip@other.test"}))
+    mail_utils.check_recipients_allowed(["a@ok.test", "VIP@other.test"])
+    with pytest.raises(PermissionError, match="EMAIL_SEND_ALLOWLIST"):
+        mail_utils.check_recipients_allowed(["a@ok.test", "x@evil.test"])
+    monkeypatch.setattr(config, "EMAIL_SEND_ALLOWLIST", frozenset())
+    mail_utils.check_recipients_allowed(["anyone@anywhere.test"])
+
+
+def test_attendees_respect_allowlist(monkeypatch):
+    monkeypatch.setattr(config, "EMAIL_SEND_ALLOWLIST", frozenset({"@ok.test"}))
+    assert calendar._validate_attendees(["Bob <bob@ok.test>", "amy@ok.test"]) == ["bob@ok.test", "amy@ok.test"]
+    with pytest.raises(PermissionError):
+        calendar._validate_attendees(["x@evil.test"])
+    with pytest.raises(ValueError):
+        calendar._validate_attendees(["not-an-address"])

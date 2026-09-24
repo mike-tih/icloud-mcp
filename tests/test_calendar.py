@@ -213,3 +213,24 @@ def test_description_html_rendered_to_text(monkeypatch):
     cal.vevent.add("description").value = "Park<br>2803 Ave<br><a href='x'>map</a>"
     data = _vevent_to_dict(cal.vevent, "u", "c")
     assert "<br>" not in data["description"] and "2803 Ave" in data["description"]
+
+
+def test_reminder_minutes_accepts_time_of_day():
+    assert calendar._reminder_minutes([60, "10", -5], None) == [60, 10, -5]
+    # all-day event: 09:00 on the day -> 540 minutes after midnight
+    assert calendar._reminder_minutes(["09:00"], date(2025, 6, 2)) == [-540]
+    # timed event starting 10:30: 09:00 the same day -> 90 minutes before
+    assert calendar._reminder_minutes(["9:00"], datetime(2025, 6, 2, 10, 30)) == [90]
+    with pytest.raises(ValueError):
+        calendar._reminder_minutes(["25:00"], None)
+    with pytest.raises(ValueError):
+        calendar._reminder_minutes(["soon"], None)
+
+
+def test_create_all_day_event_with_time_of_day_reminder(monkeypatch):
+    fake = _FakeCalendar()
+    monkeypatch.setattr(calendar, "require_auth", lambda: ("me@icloud.com", "pw"))
+    monkeypatch.setattr(calendar, "_get_caldav_client", lambda e, p: object())
+    monkeypatch.setattr(calendar, "_resolve_calendar", lambda client, cid, e, p: fake)
+    result = calendar.create_event("Birthday", "2025-06-02", "2025-06-02", reminders=["09:00"])
+    assert "TRIGGER:PT540M" in fake.ical and result["reminders"] == [-540]

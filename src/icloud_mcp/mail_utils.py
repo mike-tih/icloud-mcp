@@ -492,6 +492,24 @@ def parse_recipients(value: str | None, name: str = "recipient") -> list[str]:
     return result
 
 
+def check_recipients_allowed(addresses: list[str]) -> None:
+    """Enforce EMAIL_SEND_ALLOWLIST (full addresses or "@domain" entries). No-op when unset."""
+    allowlist = config.EMAIL_SEND_ALLOWLIST
+    if not allowlist:
+        return
+    blocked = []
+    for addr in addresses:
+        lowered = addr.strip().lower()
+        domain = lowered.rsplit("@", 1)[-1] if "@" in lowered else ""
+        if lowered in allowlist or f"@{domain}" in allowlist or domain in allowlist:
+            continue
+        blocked.append(addr)
+    if blocked:
+        raise PermissionError(
+            "Recipient(s) not permitted by EMAIL_SEND_ALLOWLIST: " + ", ".join(blocked)
+        )
+
+
 def bare_addresses(recipients: list[str]) -> list[str]:
     """SMTP envelope addresses for a list produced by parse_recipients."""
     return [parseaddr(r)[1] for r in recipients]

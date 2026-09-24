@@ -17,6 +17,7 @@ from .mail_utils import (
     bare_addresses,
     build_attachment_parts,
     build_email_message,
+    check_recipients_allowed,
     close_imap_client,
     ensure_local_files_allowed,
     extract_message_body,
@@ -390,6 +391,7 @@ def _compose(
             msg["References"] = " ".join(references)
 
     recipients = bare_addresses(to_list + cc_list + bcc_list)
+    check_recipients_allowed(recipients)
     return msg, recipients, parts
 
 
@@ -449,6 +451,8 @@ def save_draft(
     cc_list = parse_recipients(cc, "cc") if cc else []
     bcc_list = parse_recipients(bcc, "bcc") if bcc else []
     subject = validate_header_text(subject, "subject")
+    # A draft to a blocked address is one click away from a send in the mail client.
+    check_recipients_allowed(bare_addresses(to_list + cc_list + bcc_list))
 
     parts = build_attachment_parts(attachment_paths) if attachment_paths else []
     msg = build_email_message(body, html, parts)
