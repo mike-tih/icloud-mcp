@@ -112,6 +112,18 @@ class Config:
     )
 
     # Calendar defaults
+    # Subscribed (webcal/ICS) calendars. iCloud does not expose which calendars are
+    # shown in the Calendar app (that is a per-device setting), so selection is config:
+    # INCLUDE limits to the named subscriptions, EXCLUDE removes named ones (case-insensitive,
+    # exact name, comma-separated). ALLOW_PRIVATE permits feed hosts on private addresses.
+    SUBSCRIPTIONS_INCLUDE: frozenset[str] = frozenset(
+        x.strip().lower() for x in os.getenv("ICLOUD_SUBSCRIPTIONS_INCLUDE", "").split(",") if x.strip()
+    )
+    SUBSCRIPTIONS_EXCLUDE: frozenset[str] = frozenset(
+        x.strip().lower() for x in os.getenv("ICLOUD_SUBSCRIPTIONS_EXCLUDE", "").split(",") if x.strip()
+    )
+    SUBSCRIPTIONS_ALLOW_PRIVATE: bool = bool(_env_bool("ICLOUD_SUBSCRIPTIONS_ALLOW_PRIVATE", False))
+
     DEFAULT_TIMEZONE: str = os.getenv("DEFAULT_TIMEZONE") or _local_timezone_name()
 
     # Local filesystem access for attachments (save downloaded attachments,

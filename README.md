@@ -19,6 +19,8 @@ Runs in two modes with the same code:
 |------|-------------|
 | `calendar_list_calendars` | Calendars with IDs; Reminders lists are flagged `read_only` |
 | `calendar_list_events` | Events in a date range, recurring series expanded per occurrence, sorted by start |
+| `calendar_list_subscriptions` | Subscribed (webcal/ICS) calendars with IDs and feed host (never the feed URL) |
+| `calendar_list_subscribed_events` | Events from subscribed calendars, fetched from their feeds; failures reported in `feed_errors` |
 | `calendar_search_events` | Text search over summary/description/location |
 | `calendar_create_event` | Create an event: timezone, all-day, `rrule`, `reminders` (minutes before start or `"09:00"` time of day), attendees (invitations sent by email) |
 | `calendar_update_event` | Partial update; change timezone/recurrence/alerts; re-sends invitations when attendees change |
@@ -165,6 +167,9 @@ All settings are environment variables (a `.env` file next to the checkout is lo
 | `MCP_AUTH_TOKEN` | – | Shared secret required on HTTP requests |
 | `ICLOUD_MCP_ALLOW_ENV_CREDENTIALS` | true with token, else false | Serve the env account over HTTP |
 | `ICLOUD_ENABLED_CATEGORIES` | `calendar,contacts,email` | Tool groups to expose |
+| `ICLOUD_SUBSCRIPTIONS_INCLUDE` | _(all)_ | Comma-separated subscription names; when set, only these subscribed calendars are read |
+| `ICLOUD_SUBSCRIPTIONS_EXCLUDE` | _(none)_ | Comma-separated subscription names to skip (applied after INCLUDE) |
+| `ICLOUD_SUBSCRIPTIONS_ALLOW_PRIVATE` | `false` | Allow subscription feeds whose host resolves to a private/loopback address |
 | `ICLOUD_HTML_MODE` | `markdown` | Rich text in event/contact fields: `markdown`, `text` or `raw` |
 | `MCP_TRANSPORT`, `PORT`, `MCP_SERVER_HOST`, `MCP_SERVER_PATH` | stdio, `8000`, `0.0.0.0`, `/mcp` | HTTP transport |
 | `LOG_LEVEL` | `INFO` | Logging (always to stderr, stdout is reserved for stdio) |

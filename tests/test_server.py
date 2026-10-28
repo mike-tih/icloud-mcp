@@ -230,6 +230,9 @@ def test_instructions_and_annotations():
     assert "iCloud MCP server" in (instructions or "")
     assert tools["email_delete"].annotations.destructive_hint is True
     assert tools["calendar_list_events"].annotations.read_only_hint is True
+    for name in ("calendar_list_subscriptions", "calendar_list_subscribed_events"):
+        assert tools[name].annotations.read_only_hint is True
+        assert tools[name].annotations.destructive_hint is False
     assert "context" not in tools["calendar_list_events"].input_schema.get("properties", {})
 
 
